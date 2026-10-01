@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script type="text/javascript" nonce="bff5c105e9c3497db37830a0264" src="//local.adguard.org?ts=1786172723372&amp;type=content-script&amp;dmn=mail-attachment.googleusercontent.com&amp;url=https%3A%2F%2Fmail-attachment.googleusercontent.com%2Fattachment%2Fu%2F0%2F%3Fui%3D2%26ik%3Df3117add55%26attid%3D0.1%26permmsgid%3Dmsg-a%3Ar-3545140380221300374%26th%3D19fe03dc851f989c%26view%3Datt%26zw%26disp%3Dsafe%26saddbat%3DANGjdJ-nGi8a7lwdeY_EUQFotWRqxLBNje_-4DN0yrsPXDUfwhZhn9OELWS8XMVG-gFIbVKlOt6duYYfEMV20xsKFZRbMzwYtZZS8LidTuJ-0ouZAyxdjm-zfSy189mjtCLRnHF1UjZHJ2Pa2M7ZJ9p0isfTnROycMvM5hIbWiXdHT4DiI-p0EaMmdllICKcYExDywX0YLM_sY0qysXV61FxZevTS-ScQOG6-9kcWXSdEUhZCMhnsGzrXKet1_uQZMjeLBFmWWcQvlssCMkzBbvDQem55StoreyKF5ZLPqhklAgYtiV2aQVklMOXWI3RzCJU6YUIYp0iXSOV_dI6p9otwWQJuycIoWmi3j-c_35Xcv4539Lvaja08mzStlRKCw5R6ldqFVkf-yw235AdH4XK5NOmDjDVdAjz-8xKunWzrFYvI9kXR4tYeDuLUUi-Na0i69Qljhs9eoiuQHugcTMI5Mod59aUv0lyaT0IPSNbBOZXWb_aB-yYqe0_9vPs6yIZ7wkNCEwF-u2yLWUflA-ideINcjYK081-ZOwXXzyDV9MBN7zzOhiXhC49XW7JFt9lOCJv2sjup3FsgpfCPiLm491hAy4wjpuG5DrBjJJMJ8VuNYxBaiTPvzIqmgxGL7mEdAbxr6XppMy23cCinNzpw2a3BewT8TNAFLNPRVVCBZP97xGmqV_XmuqL7WCyFAUHOA0gEcAYWap_zudraeDdRL1XQZGRvmH22jFdV9CJgEeTBsSI5B7B94MeT0CR8w2tafkz_vJ18Zc5CstzZpfnMunQsbajmIjZWRU3cGB4fLXmNoW5fJwziZtc-5Oc8ePt5ONUwXSWEXnZCVgeBpaatu_C-Sn9HPS3RJKzqyCJqawFeNsK99HypVUoZ2b2-xitzj6O_8RILF1M0ZBNMx90VUSMspLZqw15rkEnpxsA0BsEGyU1IvkTHTj5AbLHvj12M5Z_5MdZZdzxKDbnhM-eyisYL37Lt5_73F5vuumrHFFArsEgr2FxlfGs6bGZMQ_jEyrT4PatGfIOdylbFaONzHEI6fxu6SoEgiUmEg&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=0&amp;rji=0&amp;sbe=1"></script><script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/appwrite@13.0.1"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div id="appwrite-sync-loader" class="loader">
+      <div class="looping-rhombuses-spinner">
+        <div class="rhombus"></div>
+        <div class="rhombus"></div>
+        <div class="rhombus"></div>
+      </div>
+      <p class="txt">同期中...</p>
+    </div>
+
+<!-- ★ 認証モーダル（画面分割デザイン） -->
+<div id="login-overlay" class="hidden">
+    <div class="login-split-container">
+        <div class="login-hero">
+            <h1><svg class="icon" style="width:36px;height:36px;vertical-align:bottom;color:var(--accent);"><use href="#icon-page"></use></svg> Motion</h1>
+            <p>思考をシームレスに記録し、整理する<br>次世代ノートアプリ。</p>
+            <ul class="login-features">
+                <li><svg class="icon"><use href="#icon-page"></use></svg> マークダウンライクな直感的操作</li>
+                <li><svg class="icon"><use href="#icon-grip"></use></svg> ドラッグ＆ドロップで自在に整理</li>
+                <li><svg class="icon"><use href="#icon-lock"></use></svg> パスワード保護とクラウド同期</li>
+            </ul>
+        </div>
+        <div class="login-form-container">
+            <div class="modal" style="box-shadow:none; border:none; background:transparent; width:100%; max-width:320px;">
+                <h3 id="auth-title">ログイン</h3>
+                <form id="auth-form" onsubmit="return false;" autocomplete="on">
+    <input type="email" id="auth-username" name="username" placeholder="メールアドレス" autocomplete="email">
+    
+    <div class="password-input-wrapper">
+        <input type="password" id="auth-password" name="password" placeholder="パスワード" autocomplete="current-password">
+        <button type="button" class="toggle-password-btn" data-target="auth-password" title="パスワードを表示">
+            <svg class="icon"><use href="#icon-eye"></use></svg>
+        </button>
+    </div>
+
+    <!-- アカウント作成時のみ表示する確認用フィールド -->
+    <div id="auth-password-confirm-wrapper" class="password-input-wrapper hidden">
+        <input type="password" id="auth-password-confirm" placeholder="パスワード（確認用）" autocomplete="new-password">
+        <button type="button" class="toggle-password-btn" data-target="auth-password-confirm" title="パスワードを表示">
+            <svg class="icon"><use href="#icon-eye"></use></svg>
+        </button>
+    </div>
+
+    <button type="button" id="auth-submit-btn" class="primary-btn">ログイン</button>
+    <button type="button" id="auth-toggle-btn" class="cancel-btn">アカウント作成へ切替</button>
+</form>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <nav id="sidebar">
+        <div class="sidebar-header">
+            <span>Motion</span>
+            <button id="search-btn" title="検索 (Ctrl+P)"><svg class="icon"><use href="#icon-search"></use></svg></button>
+        </div>
+        <div class="sidebar-home" id="btn-home">
+            <svg class="icon"><use href="#icon-home"></use></svg> ホーム
+        </div>
+        <div class="tree-container" id="tree"></div>
+        <div class="sidebar-footer">
+            <button id="add-page-btn">+ 新規ページ</button>
+            <button id="settings-btn" title="設定"><svg class="icon"><use href="#icon-settings"></use></svg></button>
+        </div>
+    </nav>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+    <main id="main">
+        <div id="mobile-topbar" class="mobile-topbar">
+            <button id="sidebar-toggle-btn"><svg class="icon"><use href="#icon-menu"></use></svg></button>
+            <span class="mobile-title" id="mobile-topbar-title">Motion</span>
+        </div>
+
+        <div class="home-wrapper" id="home-wrapper">
+            <h1 class="home-title">こんにちは！</h1>
+            <div class="home-section">
+                <h2>最近使ったページ</h2>
+                <div id="home-recent-pages" class="recent-pages-grid"></div>
+            </div>
+        </div>
+
+        <div id="inline-loading" class="hidden" style="display: flex; align-items: center; justify-content: center; padding: 20px; color: var(--text-muted); font-size: 14px; gap: 8px;">
+            <svg class="icon spinner" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M12 2v4c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8H2c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"/></svg>
+            読み込み中...
+        </div>
+
+        <div class="editor-wrapper" id="editor-wrapper" class="hidden">
+            <div id="breadcrumb" class="breadcrumb"></div>
+            <div class="page-header">
+                <div id="page-title" class="page-title-input" contenteditable="true" data-placeholder="無題" spellcheck="false"></div>
+                <button class="lock-btn" id="lock-btn">
+                    <svg class="icon"><use href="#icon-lock"></use></svg><span id="lock-text">ロック</span>
+                </button>
+            </div>
+            <div id="editor"></div>
+            <div id="editor-bottom-padding"></div>
+        </div>
+        <div id="empty-state" class="empty-state hidden">ページを選択または作成してください</div>
+    </main>
+
+    <div id="floating-menu" class="hidden">
+        <button data-cmd="bold" title="太字"><b>B</b></button>
+        <button data-cmd="italic" title="斜体"><i>I</i></button>
+        <button data-cmd="strikeThrough" title="打消線"><s>S</s></button>
+        
+        <div class="color-picker-wrapper">
+            <button title="文字色">A<small>▼</small></button>
+            <div class="color-palette">
+                <button data-cmd="foreColor" data-val="#d93025" style="color:#d93025;" title="赤">●</button>
+                <button data-cmd="foreColor" data-val="#e37400" style="color:#e37400;" title="オレンジ">●</button>
+                <button data-cmd="foreColor" data-val="#f2c41c" style="color:#f2c41c;" title="黄">●</button>
+                <button data-cmd="foreColor" data-val="#1aa260" style="color:#1aa260;" title="緑">●</button>
+                <button data-cmd="foreColor" data-val="#2383e2" style="color:#2383e2;" title="青">●</button>
+                <button data-cmd="foreColor" data-val="#b324c4" style="color:#b324c4;" title="紫">●</button>
+                <button data-cmd="foreColor" data-val="#9a9a97" style="color:#9a9a97;" title="グレー">●</button>
+            </div>
+        </div>
+
+        <div class="color-picker-wrapper">
+            <button title="ハイライト">H<small>▼</small></button>
+            <div class="color-palette">
+                <button data-cmd="hiliteColor" data-val="#f8a79b" style="background:#f8a79b;" title="赤背景"></button>
+                <button data-cmd="hiliteColor" data-val="#fbe090" style="background:#fbe090;" title="オレンジ背景"></button>
+                <button data-cmd="hiliteColor" data-val="#fdf058" style="background:#fdf058;" title="黄背景"></button>
+                <button data-cmd="hiliteColor" data-val="#a8dfb0" style="background:#a8dfb0;" title="緑背景"></button>
+                <button data-cmd="hiliteColor" data-val="#a4d1f2" style="background:#a4d1f2;" title="青背景"></button>
+                <button data-cmd="hiliteColor" data-val="#d4b4e5" style="background:#d4b4e5;" title="紫背景"></button>
+                <button data-cmd="hiliteColor" data-val="#e9e9e7" style="background:#e9e9e7;" title="グレー背景"></button>
+            </div>
+        </div>
+
+        <button data-cmd="removeFormat" title="書式クリア">✕</button>
+    </div>
+
+    <div id="context-menu" class="hidden">
+        <div class="menu-item" id="ctx-add-subpage">サブページを追加</div>
+        <div class="menu-item delete" id="ctx-delete-page">ページを削除</div>
+    </div>
+
+    <div id="block-menu" class="hidden">
+        <div class="menu-item" onclick="executeBlockMenu('p')">テキスト (段落)</div>
+        <div class="menu-item" onclick="executeBlockMenu('h1')">見出し 1</div>
+        <div class="menu-item" onclick="executeBlockMenu('h2')">見出し 2</div>
+        <div class="menu-item" onclick="executeBlockMenu('todo')">To-do リスト</div>
+        <div class="menu-item" onclick="executeBlockMenu('toggle')">トグルリスト</div>
+        <div style="border-top: 1px solid var(--border); margin: 4px 0;"></div>
+        <div class="menu-item" onclick="executeBlockMenu('duplicate')">複製</div>
+        <div class="menu-item" onclick="executeBlockMenu('copy')">コピー</div>
+        <div class="menu-item delete" onclick="executeBlockMenu('delete')">削除</div>
+    </div>
+
+    <div id="slash-menu" class="hidden"></div>
+    <input type="file" id="image-upload-input" accept="image/*" style="display:none;">
+
+<div id="overlay" class="hidden">
+    <div class="modal" id="modal-box">
+        <h3 id="modal-title">ページはロックされています</h3>
+        <p class="modal-desc">パスワードを入力して解除してください</p>
+        
+        <!-- formタグを使わずdivにする -->
+        <div id="lock-pass-form">
+            <div class="password-input-wrapper">
+                <!-- type="text" にしてブラウザの自動入力を完全に回避 -->
+                <input type="text" id="modal-pass" placeholder="ロック解除キー" autocomplete="one-time-code" inputmode="url" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" style="-webkit-text-security: disc;">
+                <button type="button" class="toggle-password-btn" data-target="modal-pass" title="パスワードを表示">
+                    <svg class="icon"><use href="#icon-eye"></use></svg>
+                </button>
+            </div>
+            
+            <button type="button" id="modal-submit" class="primary-btn">解除</button>
+            <button type="button" id="modal-cancel" class="cancel-btn">キャンセル</button>
+        </div>
+    </div>
+</div>    
+    <div id="search-overlay" class="hidden"><div class="modal search-modal"><input type="text" id="search-input" placeholder="タイトルや内容を検索 (Escで閉じる)"><div id="search-results" class="search-results"></div></div></div>
+    
+    <div id="link-overlay" class="hidden"><div class="modal"><h3>ページへリンク</h3><select id="link-select"></select><button id="link-submit" class="primary-btn">挿入</button><button id="link-cancel" class="cancel-btn">キャンセル</button></div></div>
+    
+    <div id="ext-link-overlay" class="hidden"><div class="modal"><h3>Webリンク挿入</h3><input type="text" id="ext-link-title" placeholder="表示テキスト"><input type="url" id="ext-link-url" placeholder="https://..."><button id="ext-link-submit" class="primary-btn">挿入</button><button id="ext-link-cancel" class="cancel-btn">キャンセル</button></div></div>
+
+    <!-- 設定モーダル -->
+    <div id="settings-overlay" class="hidden">
+        <div class="settings-modal">
+            <button id="settings-close" class="close-icon-btn">×</button>
+            <div class="settings-sidebar" id="settings-sidebar">
+                <div class="settings-tab active" data-tab="appearance">外観・一般</div>
+                <div class="settings-tab" data-tab="account">アカウント</div>
+                <div class="settings-tab" data-tab="data">データ管理</div>
+                <div class="settings-tab" data-tab="danger">危険な操作</div>
+                <!-- ★ 管理者専用タブ（初期状態は隠す） -->
+                <div class="settings-tab hidden" id="tab-btn-admin" data-tab="admin" style="color:var(--accent); font-weight:600;">ユーザー管理</div>
+            </div>
+            <div class="settings-content">
+                <!-- 外観・一般 -->
+                <div id="tab-appearance" class="tab-pane active">
+                    <h3>テーマ</h3>
+                    <label><input type="radio" name="theme" value="light"> ライトモード</label><br>
+                    <label><input type="radio" name="theme" value="dark"> ダークモード</label>
+                    
+                    <h3 style="margin-top:24px;">画像アップロード設定</h3>
+                    <label>
+                        <select id="setting-image-quality" style="padding:4px 8px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--text-main);">
+                            <option value="original">元画質で保存</option>
+                            <option value="compressed">容量を削減して保存 (リサイズ)</option>
+                        </select>
+                    </label>
+
+                    <h3 style="margin-top:24px;">ホーム画面</h3>
+                    <label><input type="checkbox" id="setting-show-locked"> ロックされたページを「最近使ったページ」に表示する</label>
+<h3 style="margin-top:24px;">検索設定</h3>
+<label><input type="checkbox" id="setting-search-locked"> ロックされたページを検索結果に含める</label>
+                </div>
+                
+                <!-- アカウント -->
+                <div id="tab-account" class="tab-pane hidden">
+                    <h3>アカウント設定</h3>
+                    <p class="modal-desc" id="user-info-text">ログイン中: -</p>
+                    
+                    <h4 style="margin-top:16px;">ストレージ使用量</h4>
+                    <p id="storage-usage-text" class="modal-desc" style="text-align:left; margin-bottom:4px;">計算中...</p>
+                    <div class="storage-bar-container">
+                        <div id="storage-bar-fill" class="storage-bar-fill"></div>
+                    </div>
+                    <p id="storage-limit-text" class="modal-desc" style="text-align:right; font-size:12px; margin-top:4px;"></p>
+
+
+<div id="storage-warning-text" class="hidden" style="color: #d93025; font-size: 13px; margin-top: 8px; font-weight: 500;">
+    ※ストレージ使用量が90%を超えています。不要な画像を削除してください。
+</div>
+
+                    <h4 style="margin-top:24px;">パスワード変更</h4>
+                    <input type="password" id="change-pass-old" placeholder="現在のパスワード">
+                    <input type="password" id="change-pass-new" placeholder="新しいパスワード">
+                    <button id="btn-change-pass" class="primary-btn">パスワード更新</button>
+                    <button id="btn-logout" class="danger-btn" style="margin-top:24px;">ログアウト</button>
+                </div>
+
+                <!-- データ管理 -->
+                <div id="tab-data" class="tab-pane hidden">
+                    <h3>データ管理</h3>
+                    <p class="modal-desc" style="text-align:left;">大容量のIndexedDBに保存されています。</p>
+                    <button id="btn-export" class="primary-btn" style="margin-bottom:8px;">エクスポート (.json)</button>
+                    <input type="file" id="file-import" accept=".json" style="display:none;">
+                    <button id="btn-import" class="cancel-btn" style="margin-bottom:24px;">インポート</button>
+                    <div style="padding:16px; border:1px solid var(--border); border-radius:6px; background:var(--bg-hover);">
+                        <h4>📂 ローカルファイルと同期 (PC向け)</h4>
+                        <p class="modal-desc" style="text-align:left; font-size:12px;">指定したPC内のJSONファイルに直接上書き保存します。ブラウザを閉じると権限がリセットされる場合があります。</p>
+                        <button id="btn-sync-file" class="primary-btn" style="background:#2383e2;">同期ファイルを選択・作成</button>
+                        <div id="sync-status" style="font-size:12px; margin-top:8px; color:var(--text-muted);">未同期</div>
+                    </div>
+                </div>
+
+                <!-- 危険な操作 -->
+                <div id="tab-danger" class="tab-pane hidden">
+                    <h3>危険な操作</h3>
+                    <button id="btn-reset" class="danger-btn">ファクトリーリセット</button>
+                </div>
+
+                <!-- 管理者専用タブ -->
+                <div id="tab-admin" class="tab-pane hidden">
+                    <h3>ユーザー承認管理</h3>
+                    <p class="modal-desc" style="text-align:left;">承認待ちのユーザー一覧です。</p>
+                    <div id="admin-pending-users-list" style="margin-top:12px;">
+                        <p style="font-size:13px; color:var(--text-muted);">読み込み中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <svg style="display:none;">
+        <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></symbol>
+        <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></symbol>
+        <symbol id="icon-menu" viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></symbol>
+        <symbol id="icon-grip" viewBox="0 0 24 24"><path d="M8 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM14 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM14 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/></symbol>
+        <symbol id="icon-page" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></symbol>
+        <symbol id="icon-lock" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></symbol>
+        <symbol id="icon-toggle" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.73 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></symbol>
+        <symbol id="icon-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+        <symbol id="icon-home" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></symbol>
+    </svg>
+
+<!-- ▼▼ モバイルツールバー ▼▼ -->
+    <div id="mobile-toolbar" class="mobile-toolbar">
+        <button class="m-tool-btn" data-action="menu">＋</button>
+        <button class="m-tool-btn" data-action="h1">H1</button>
+        <button class="m-tool-btn" data-action="todo">Todo</button>
+        <button class="m-tool-btn" data-action="image">IMG</button>
+        <button class="m-tool-btn" data-action="bold">B</button>
+    </div>
+
+    <!-- ▼▼ モバイル用ボトムシートメニュー ▼▼ -->
+    <div id="mobile-bottom-sheet-overlay" class="hidden">
+        <div id="mobile-bottom-sheet">
+            <div class="sheet-header">
+                <span>機能を追加</span>
+                <button id="close-sheet-btn">✕</button>
+            </div>
+            <div class="sheet-content" id="mobile-sheet-content">
+                <!-- JSでコマンド一覧を生成 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
+    <script src="script.js"></script>
+</body>
+</html>

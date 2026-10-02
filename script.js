@@ -2,7 +2,7 @@ const DB_KEY = 'local_workspace_data';
 const COMMANDS = [
     { id: 'image', label: 'Image', desc: '画像を挿入', keys: ['image', '画像', 'pic'] },
     { id: 'link', label: 'Web Link', desc: 'Webリンクを挿入', keys: ['link', 'リンク'] },
-    { id: 'table', label: 'Table', desc: '表を追加', keys: ['table', '表', 'ひょう'] }, // ★追加
+    { id: 'table', label: 'Table', desc: '表を追加', keys: ['table', '表', 'ひょう'] },
     { id: 'page', label: 'Page', desc: 'サブページを作成', keys: ['page', 'ページ'] },
     { id: 'linkpage', label: 'Link to Page', desc: '既存ページへのリンク', keys: ['linkpage', 'ページリンク'] },
     { id: 'h1', label: 'Heading 1', desc: '大見出し', keys: ['h1', '見出し1'] },
@@ -18,6 +18,40 @@ let pendingImageTargetBlock = null;
 
 let currentMediaBytes = 0;
 const MAX_MEDIA_BYTES = 500 * 1024 * 1024; // 500MB 上限
+
+// ================= 自作API 通信基盤 =================
+// トークンとユーザー情報をローカルストレージで管理します
+let currentUser = JSON.parse(localStorage.getItem('motion_user') || 'null');
+
+const API_BASE = ''; // K8s環境でフロントとバックエンドを同じドメインにする想定
+
+// APIリクエスト用の共通関数（JWTトークンを自動付与）
+async function apiFetch(endpoint, options = {}) {
+    const token = localStorage.getItem('motion_token');
+    if (!options.headers) options.headers = {};
+    
+    if (!(options.body instanceof FormData)) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+    if (token) {
+        options.headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const res = await fetch(`${API_BASE}${endpoint}`, options);
+    if (!res.ok) {
+        let errData = {};
+        try { errData = await res.json(); } catch(e) {}
+        throw new Error(errData.error || `HTTPエラー: ${res.status}`);
+    }
+    // DELETEなどレスポンスが空の場合の考慮
+    const text = await res.text();
+    return text ? JSON.parse(text) : {};
+}
+
+// 設定を保存するヘルパー関数
+async function savePrefs(key, value) {
+    localStorage.setItem(`motion_pref_${key}`, value);
+}
 
 // ================= 複数ブロック選択・コピペ用の状態と補助関数 =================
 let selectedBlocks = new Set();
@@ -46,7 +80,7 @@ function extractSingleBlock(wrapper) {
     let content = '';
     if (type === 'page_link') content = contentEl?.dataset.linkId || '';
     else if (type === 'image') content = contentEl?.querySelector('img')?.src || '';
-else if (type === 'table') {
+    else if (type === 'table') {
         const rows = [];
         const widths = [];
         wrapper.querySelectorAll('.motion-table tr').forEach((tr, rIdx) => {
@@ -137,23 +171,50 @@ function deleteSelectedBlocks() {
     }
     reinitSortables();
 }
-// =======================================================================
 
-// Appwrite Storageから画像を削除する処理
+// ================= 画像処理 (K8s API仕様) =================
 async function deleteImageFromStorage(fileUrl, fileId) {
-    let idToDelete = fileId;
-    if (!idToDelete && fileUrl) {
-        const match = fileUrl.match(/\/files\/([^\/?#]+)/);
-        if (match) idToDelete = match[1];
+    if (!fileId) return;
+    try {
+        await apiFetch(`/api/uploads/${fileId}`, { method: 'DELETE' });
+        console.log('Storageからファイルを削除しました:', fileId);
+    } catch (e) {
+        console.error('Storage削除エラー:', e);
     }
-    if (idToDelete) {
-        try {
-            await storage.deleteFile(BUCKET_ID, idToDelete);
-            console.log('Storageからファイルを削除しました:', idToDelete);
-            calcStorageUsage(); // 容量計算を更新
-        } catch (e) {
-            console.error('Storage削除エラー:', e);
-        }
+}
+
+async function uploadAndInsertImage(file, targetBlock) {
+    const qualityMode = localStorage.getItem('motion_image_quality') || 'original';
+    let fileToUpload = file;
+
+    if (qualityMode === 'compressed') {
+        fileToUpload = await compressImage(file, 1200, 0.7);
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('image', fileToUpload);
+
+        const res = await apiFetch('/api/uploads', {
+            method: 'POST',
+            body: formData 
+        });
+
+        const temp = document.createElement('div');
+        renderBlocks([{ 
+            id: targetBlock.dataset.id, 
+            type: 'image', 
+            content: res.url, 
+            fileId: res.fileId, 
+            children:[] 
+        }], temp);
+        
+        targetBlock.replaceWith(temp.firstElementChild);
+        saveEditorState(true); 
+        reinitSortables();
+    } catch (err) {
+        alert("画像のアップロードに失敗しました: " + err.message);
+        console.error(err);
     }
 }
 
@@ -163,48 +224,15 @@ let historyIndex = {};
 const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
 const clone = (obj) => JSON.parse(JSON.stringify(obj));
 
-// ================= Appwrite 初期化 =================
-const { Client, Account, Databases, Storage, ID, Query, Permission, Role } = Appwrite;
-
-const client = new Client()
-    .setEndpoint('https://nyc.cloud.appwrite.io/v1')
-    .setProject('6a75a37300149977659a');
-
-const account = new Account(client);
-const databases = new Databases(client);
-const storage = new Storage(client);
-
-const DB_ID = 'motion_db';
-const COLLECTION_PAGES = 'pages';
-const BUCKET_ID = 'motion_storage';
-
-let currentUser = null;
-
-// 設定をクラウドへ保存するヘルパー関数
-async function savePrefs(key, value) {
-    if (!currentUser) return;
-    try {
-        const prefs = await account.getPrefs();
-        prefs[key] = value;
-        await account.updatePrefs(prefs);
-    } catch(e) { console.error('Prefs update error:', e); }
-}
-
-// ================= 認証・初期化処理 =================
+// ================= 認証・初期化処理 (K8s API仕様) =================
 async function initApp() {
     applyTheme();
     
-    const savedQuality = localStorage.getItem('motion_image_quality') || 'original';
-    const qualitySelect = document.getElementById('setting-image-quality');
-    if (qualitySelect) qualitySelect.value = savedQuality;
-
-    // ★ 追加: ローダーのUI要素を取得
     const syncLoader = document.getElementById('appwrite-sync-loader');
     const syncSpinner = syncLoader?.querySelector('.looping-rhombuses-spinner');
     const syncTxt = syncLoader?.querySelector('.txt');
 
     try {
-        // ★ 追加: ログインチェック開始時にローダーのアニメーションとテキストを表示
         if (syncLoader) {
             syncLoader.classList.remove('hidden');
             setTimeout(() => {
@@ -213,52 +241,28 @@ async function initApp() {
             }, 100);
         }
 
-        currentUser = await account.get();
-        
-        try {
-            const userDoc = await databases.getDocument(DB_ID, 'users', currentUser.$id);
-            if (userDoc.status !== 'approved') {
-                if (syncLoader) syncLoader.classList.add('hidden'); // 未承認時はローダーを消す
-                showPendingApprovalModal(currentUser.email);
-                return;
-            }
-        } catch (err) {
+        const token = localStorage.getItem('motion_token');
+        if (!token || !currentUser) throw new Error('Not logged in');
+
+        // 未承認ユーザーのブロック
+        if (currentUser.role !== 'admin' && currentUser.status !== 'approved') {
             if (syncLoader) syncLoader.classList.add('hidden');
-            showPendingApprovalModal(currentUser?.email || '');
+            showPendingApprovalModal(currentUser.email);
             return;
         }
 
-        // --- 承認済みユーザー ---
         document.getElementById('sidebar')?.classList.remove('hidden');
         document.getElementById('main')?.classList.remove('hidden');
         document.getElementById('login-overlay')?.classList.add('hidden');
 
         const userInfoText = document.getElementById('user-info-text');
-        if (userInfoText) {
-            userInfoText.textContent = `ログイン中: ${currentUser.name} (${currentUser.email})`;
-        }
+        if (userInfoText) userInfoText.textContent = `ログイン中: ${currentUser.email}`;
         
-        if (currentUser.email === 'thonglo02cocoa@gmail.com') {
+        if (currentUser.role === 'admin') {
             document.getElementById('tab-btn-admin')?.classList.remove('hidden');
-            checkPendingUsersForAdmin();
         }
 
-        try {
-            const prefs = await account.getPrefs();
-            if (prefs.theme) localStorage.setItem('local_workspace_theme', prefs.theme);
-            if (prefs.image_quality) localStorage.setItem('motion_image_quality', prefs.image_quality);
-            if (prefs.show_locked !== undefined) localStorage.setItem('motion_show_locked_in_home', prefs.show_locked);
-            if (prefs.search_locked !== undefined) localStorage.setItem('motion_search_locked', prefs.search_locked);
-        } catch(e) { console.warn('設定の読み込みスキップ:', e); }
-
-        applyTheme();
-        const qualitySelectInput = document.getElementById('setting-image-quality');
-        if (qualitySelectInput) qualitySelectInput.value = localStorage.getItem('motion_image_quality') || 'original';
-        const showLockedInput = document.getElementById('setting-show-locked');
-        if (showLockedInput) showLockedInput.checked = (localStorage.getItem('motion_show_locked_in_home') === 'true');
-        const searchLockedInput = document.getElementById('setting-search-locked');
-        if (searchLockedInput) searchLockedInput.checked = (localStorage.getItem('motion_search_locked') === 'true');
-
+        // UI設定の復元
         const savedUi = localStorage.getItem('motion_ui_state');
         if (savedUi) {
             const parsedUi = JSON.parse(savedUi);
@@ -266,15 +270,11 @@ async function initApp() {
             state.recentPages = parsedUi.recentPages || [];
         }
 
-        // ★ Appwriteとのデータ同期を実行（ここでロード時間がかかります）
-        await loadDataFromAppwrite();
+        await loadDataFromApi();
 
-        // ★ 追加: 同期完了！テキストを切り替えてからローダーをフェードアウト
         if (syncLoader) {
             if (syncTxt) syncTxt.textContent = '完了！';
-            setTimeout(() => {
-                syncLoader.classList.add('hidden');
-            }, 500); // 完了の文字を0.5秒見せてから消す
+            setTimeout(() => { syncLoader.classList.add('hidden'); }, 500);
         }
 
         state.expandedNodes = state.expandedNodes.filter(id => {
@@ -286,14 +286,94 @@ async function initApp() {
         openPage('home');
         calcStorageUsage();
     } catch (err) {
-        // ★ エラー時（未ログイン状態など）はローダーを隠してログイン画面を出す
         if (syncLoader) syncLoader.classList.add('hidden');
         currentUser = null;
+        localStorage.removeItem('motion_token');
+        localStorage.removeItem('motion_user');
         showAuthModal();
     }
 }
 
-// 未承認ユーザー用の停止画面を表示するヘルパー関数
+function showAuthModal() {
+    const authOverlay = document.getElementById('login-overlay');
+    if (!authOverlay) return;
+
+    document.getElementById('sidebar')?.classList.add('hidden');
+    document.getElementById('main')?.classList.add('hidden');
+
+    const usernameInput = document.getElementById('auth-username');
+    const passwordInput = document.getElementById('auth-password');
+    const authSubmit = document.getElementById('auth-submit-btn');
+    const authToggle = document.getElementById('auth-toggle-btn');
+    const confirmInput = document.getElementById('auth-password-confirm');
+    const confirmWrapper = document.getElementById('auth-password-confirm-wrapper');
+
+    let inputsWrapper = document.getElementById('auth-inputs-wrapper');
+    if (!inputsWrapper) {
+        inputsWrapper = document.createElement('div');
+        inputsWrapper.id = 'auth-inputs-wrapper';
+        usernameInput.parentNode.insertBefore(inputsWrapper, usernameInput);
+        inputsWrapper.append(usernameInput, passwordInput.parentNode, confirmWrapper, authSubmit, authToggle);
+    }
+
+    usernameInput.value = ''; passwordInput.value = '';
+    if (confirmInput) confirmInput.value = '';
+    inputsWrapper.classList.remove('hidden');
+    authOverlay.classList.remove('hidden');
+    let isSignUp = false;
+
+    authToggle.onclick = () => {
+        isSignUp = !isSignUp;
+        document.getElementById('auth-title').textContent = isSignUp ? 'アカウント作成' : 'ログイン';
+        authSubmit.textContent = isSignUp ? 'アカウントを作成' : 'ログイン';
+        authToggle.textContent = isSignUp ? 'ログインへ切替' : 'アカウント作成へ切替';
+        usernameInput.value = ''; passwordInput.value = '';
+        if (confirmInput) confirmInput.value = '';
+        passwordInput.setAttribute('autocomplete', isSignUp ? 'new-password' : 'current-password');
+        isSignUp ? confirmWrapper?.classList.remove('hidden') : confirmWrapper?.classList.add('hidden');
+    };
+
+    authSubmit.onclick = async () => {
+        const email = usernameInput.value.trim();
+        const pass = passwordInput.value.trim();
+        const confirmPass = confirmInput ? confirmInput.value.trim() : '';
+        
+        if (!email || !pass) return alert('メールアドレスとパスワードを入力してください');
+
+        if (isSignUp) {
+            if (pass !== confirmPass) return alert('パスワードと確認用パスワードが一致しません');
+            if (pass.length < 8) return alert('パスワードは8文字以上で設定してください');
+        }
+
+        try {
+            if (isSignUp) {
+                await apiFetch('/api/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password: pass })
+                });
+                alert('アカウントを作成しました。管理者の承認をお待ちください。');
+                location.reload();
+            } else {
+                const res = await apiFetch('/api/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password: pass })
+                });
+                localStorage.setItem('motion_token', res.token);
+                localStorage.setItem('motion_user', JSON.stringify(res.user));
+                location.reload();
+            }
+        } catch (e) {
+            alert(`エラー: ${e.message}`);
+        }
+    };
+}
+
+document.getElementById('btn-logout')?.addEventListener('click', () => {
+    localStorage.removeItem('motion_token');
+    localStorage.removeItem('motion_user');
+    location.reload();
+});
+
 function showPendingApprovalModal(email) {
     const authOverlay = document.getElementById('login-overlay');
     if (!authOverlay) return;
@@ -312,10 +392,9 @@ function showPendingApprovalModal(email) {
             <button type="button" id="pending-logout-btn" class="primary-btn" style="margin-bottom:8px;">ログアウトして別のアカウントでログイン</button>
         `;
 
-        document.getElementById('pending-logout-btn').onclick = async () => {
-            try {
-                await account.deleteSession('current');
-            } catch (e) {}
+        document.getElementById('pending-logout-btn').onclick = () => {
+            localStorage.removeItem('motion_token');
+            localStorage.removeItem('motion_user');
             currentUser = null;
             location.reload();
         };
@@ -368,251 +447,34 @@ async function calcStorageUsage() {
         textBytes += new Blob([pageString]).size;
     });
 
-    usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: 計算中...`;
-
-    try {
-        if (currentUser) {
-            const fileList = await storage.listFiles(BUCKET_ID);
-            currentMediaBytes = fileList.files.reduce((sum, file) => sum + (file.sizeOriginal || 0), 0);
-        }
-    } catch (err) {
-        console.error("ストレージ使用量取得エラー:", err);
-    }
-
-    usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: ${formatBytes(currentMediaBytes)}`;
+    usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: 容量取得非対応 (自作API移行済)`;
     
     if (limitText && barFill) {
-        const percent = Math.min((currentMediaBytes / MAX_MEDIA_BYTES) * 100, 100);
-        barFill.style.width = `${percent}%`;
+        barFill.style.width = `0%`;
         barFill.classList.remove('warning', 'danger');
-        
-        const warningText = document.getElementById('storage-warning-text');
-        
-        if (percent >= 90) {
-            barFill.classList.add('danger');
-            if(warningText) warningText.classList.remove('hidden');
-        }
-        else if (percent >= 70) {
-            barFill.classList.add('warning');
-            if(warningText) warningText.classList.add('hidden');
-        } else {
-            if(warningText) warningText.classList.add('hidden');
-        }
-        
-        limitText.textContent = `${formatBytes(currentMediaBytes)} / 500.00 MB (${percent.toFixed(1)}%)`;
+        limitText.textContent = ``;
     }
 }
 
-const usernameToEmail = (username) => `${username.toLowerCase()}@motion.local`;
-let tempAuthData = null;
-
-function showAuthModal() {
-    const authOverlay = document.getElementById('login-overlay');
-    if (!authOverlay) return;
-
-    document.getElementById('sidebar')?.classList.add('hidden');
-    document.getElementById('main')?.classList.add('hidden');
-
-    const usernameInput = document.getElementById('auth-username');
-    const passwordInput = document.getElementById('auth-password');
-    const authSubmit = document.getElementById('auth-submit-btn');
-    const authToggle = document.getElementById('auth-toggle-btn');
-    const authForm = document.getElementById('auth-form');
-    const confirmInput = document.getElementById('auth-password-confirm');
-    const confirmWrapper = document.getElementById('auth-password-confirm-wrapper');
-
-    let otpContainer = document.getElementById('otp-container');
-    if (!otpContainer) {
-        otpContainer = document.createElement('div');
-        otpContainer.id = 'otp-container';
-        otpContainer.className = 'hidden';
-        otpContainer.innerHTML = `
-            <p style="font-size:14px; margin-bottom:12px; color:var(--text-main);">メールに送信された6桁の認証コードを入力してください。</p>
-            <input type="text" id="auth-otp" placeholder="6桁のコード" maxlength="6" style="margin-bottom:12px;">
-            <button type="button" id="auth-otp-submit" class="primary-btn">認証して申請</button>
-            <button type="button" id="auth-otp-cancel" class="cancel-btn">キャンセル</button>
-        `;
-        authForm.appendChild(otpContainer);
-    }
-
-    let inputsWrapper = document.getElementById('auth-inputs-wrapper');
-    if (!inputsWrapper) {
-        inputsWrapper = document.createElement('div');
-        inputsWrapper.id = 'auth-inputs-wrapper';
-        usernameInput.parentNode.insertBefore(inputsWrapper, usernameInput);
-        inputsWrapper.append(usernameInput, passwordInput.parentNode, confirmWrapper, authSubmit, authToggle);
-    }
-
-    usernameInput.value = '';
-    passwordInput.value = '';
-    if (confirmInput) confirmInput.value = '';
-    inputsWrapper.classList.remove('hidden');
-    otpContainer.classList.add('hidden');
-    authOverlay.classList.remove('hidden');
-    let isSignUp = false;
-
-    authToggle.onclick = () => {
-        isSignUp = !isSignUp;
-        document.getElementById('auth-title').textContent = isSignUp ? 'アカウント作成' : 'ログイン';
-        authSubmit.textContent = isSignUp ? 'アカウントを作成' : 'ログイン';
-        authToggle.textContent = isSignUp ? 'ログインへ切替' : 'アカウント作成へ切替';
-        usernameInput.value = '';
-        passwordInput.value = '';
-        if (confirmInput) confirmInput.value = '';
-        passwordInput.setAttribute('autocomplete', isSignUp ? 'new-password' : 'current-password');
-        
-        if (isSignUp) {
-            confirmWrapper?.classList.remove('hidden');
-        } else {
-            confirmWrapper?.classList.add('hidden');
-        }
-    };
-
-    authSubmit.onclick = async () => {
-        const email = usernameInput.value.trim();
-        const pass = passwordInput.value.trim();
-        const confirmPass = confirmInput ? confirmInput.value.trim() : '';
-
-        if (!email || !pass) return alert('メールアドレスとパスワードを入力してください');
-        if (!email.includes('@') || !email.includes('.')) {
-            return alert('有効なメールアドレスを入力してください');
-        }
-
-        if (isSignUp) {
-            if (pass !== confirmPass) {
-                return alert('パスワードと確認用パスワードが一致しません');
-            }
-            if (pass.length < 8) {
-                return alert('パスワードは8文字以上で設定してください');
-            }
-        }
-
-        try {
-            if (isSignUp) {
-                const newUser = await account.create(ID.unique(), email, pass);
-                await account.createEmailSession(email, pass);
-                await databases.createDocument(
-                    DB_ID, 'users', newUser.$id, 
-                    { email: email, status: 'pending' },
-                    [
-                        Permission.read(Role.any()),
-                        Permission.update(Role.user(newUser.$id)),
-                        Permission.delete(Role.user(newUser.$id))
-                    ]
-                );
-                await sendAdminRequestEmail(email);
-                await account.deleteSession('current');
-                alert('アカウントを作成しました。管理者の承認をお待ちください。');
-                location.reload();
-            } else {
-                try {
-                    await account.deleteSession('current');
-                } catch (e) {}
-                await account.createEmailSession(email, pass);
-                usernameInput.value = '';
-                passwordInput.value = '';
-                authOverlay.classList.add('hidden');
-                location.reload();
-            }
-        } catch (e) {
-            alert(`エラー: ${e.message}`);
-        }
-    };
-
-    document.getElementById('auth-otp-submit').onclick = async () => {
-        const secret = document.getElementById('auth-otp').value.trim();
-        if(!secret) return alert('認証コードを入力してください');
-        try {
-            await account.createSession(tempAuthData.userId, secret);
-            await databases.createDocument(DB_ID, 'users', tempAuthData.userId, { email: tempAuthData.email, status: 'pending' });
-            await sendAdminRequestEmail(tempAuthData.email);
-            await account.deleteSession('current');
-            alert('管理者にアカウント開設のリクエストを送りました。承認されるまでお待ちください。');
-            location.reload();
-        } catch (e) {
-            alert(`認証エラー: ${e.message}`);
-        }
-    };
-
-    document.getElementById('auth-otp-cancel').onclick = () => {
-        inputsWrapper.classList.remove('hidden');
-        otpContainer.classList.add('hidden');
-        document.getElementById('auth-title').textContent = 'アカウント作成';
-        tempAuthData = null;
-    };
-}
-
-document.getElementById('btn-change-pass')?.addEventListener('click', async () => {
-    const oldPass = document.getElementById('change-pass-old').value;
-    const newPass = document.getElementById('change-pass-new').value;
-    if (!oldPass || !newPass) return alert('旧パスワードと新パスワードを入力してください');
-
-    try {
-        await account.updatePassword(newPass, oldPass);
-        alert('パスワードを変更しました。');
-        document.getElementById('change-pass-old').value = '';
-        document.getElementById('change-pass-new').value = '';
-    } catch (e) {
-        alert(`変更失敗: ${e.message}`);
-    }
-});
-
-document.getElementById('btn-logout')?.addEventListener('click', async () => {
-    await account.deleteSession('current');
-    location.reload();
-});
-
-// ================= Appwrite データ同期 =================
-// ================= Appwrite データ同期 =================
-async function loadDataFromAppwrite() {
+// ================= データ同期 (K8s API仕様) =================
+async function loadDataFromApi() {
     try {
         state.pages = {};
         state.rootPages = [];
-        const pageMap = {};
-
-        let hasMore = true;
-        let lastId = null;
-
-        while (hasMore) {
-            // ★変更: blocks を除外してメタデータだけを取得する
-            const queries = [
-                Query.limit(100),
-                Query.select(["pageId", "title", "parentId", "isLocked", "password"])
-            ];
-            if (lastId) {
-                queries.push(Query.cursorAfter(lastId));
-            }
-
-            const response = await databases.listDocuments(DB_ID, COLLECTION_PAGES, queries);
-
-            for (const doc of response.documents) {
-                if (!pageMap[doc.pageId]) {
-                    pageMap[doc.pageId] = doc;
-                } else {
-                    try {
-                        await databases.deleteDocument(DB_ID, COLLECTION_PAGES, doc.$id);
-                    } catch (e) {}
-                }
-            }
-
-            if (response.documents.length < 100) {
-                hasMore = false;
-            } else {
-                lastId = response.documents[response.documents.length - 1].$id;
-            }
-        }
-
-        Object.values(pageMap).forEach(doc => {
-            state.pages[doc.pageId] = {
-                id: doc.pageId,
+        
+        // ページ一覧の取得（blocksは含まれません）
+        const pages = await apiFetch('/api/pages');
+        
+        pages.forEach(doc => {
+            state.pages[doc.id] = {
+                id: doc.id,
                 title: doc.title || '',
-                parentId: doc.parentId || null,
-                blocks: null, // ★変更: 初期状態は未読み込み（null）とする
-                isLocked: doc.isLocked || false,
-                password: doc.password || null,
-                $id: doc.$id
+                parentId: doc.parent_id || null, 
+                blocks: null, 
+                isLocked: doc.is_locked || false,
+                password: doc.password_hash || null
             };
-            if (!doc.parentId) state.rootPages.push(doc.pageId);
+            if (!doc.parent_id) state.rootPages.push(doc.id);
         });
 
         if (Object.keys(state.pages).length === 0) {
@@ -626,68 +488,58 @@ async function loadDataFromAppwrite() {
             };
             state.pages[id] = initialPage;
             state.rootPages.push(id);
-            await createPageInAppwrite(initialPage);
+            await createPageInApi(initialPage);
         }
     } catch (e) {
         console.error('Data load error:', e);
     }
 }
 
-async function createPageInAppwrite(page) {
+async function createPageInApi(page) {
     if (!currentUser) return;
-    
-    const payload = {
-        pageId: page.id,
-        title: page.title || '',
-        parentId: page.parentId || null,
-        blocks: JSON.stringify(page.blocks),
-        isLocked: page.isLocked || false,
-        password: page.password || null
-    };
-
-    const permissions = [
-        Permission.read(Role.user(currentUser.$id)),
-        Permission.update(Role.user(currentUser.$id)),
-        Permission.delete(Role.user(currentUser.$id))
-    ];
-
     try {
-        const doc = await databases.createDocument(DB_ID, COLLECTION_PAGES, ID.unique(), payload, permissions);
-        page.$id = doc.$id;
+        const payload = {
+            id: page.id,
+            title: page.title || '',
+            parentId: page.parentId || null,
+            blocks: page.blocks || [],
+            isLocked: page.isLocked || false,
+            passwordHash: page.password || null
+        };
+        await apiFetch('/api/pages', { method: 'POST', body: JSON.stringify(payload) });
     } catch (e) {
         console.error('Create page error:', e);
     }
 }
 
-async function saveDataToAppwrite(pageTarget) {
+async function saveDataToApi(pageTarget) {
     if (!currentUser) return;
     const page = pageTarget || state.pages[state.currentPageId];
     if (!page || page.id === 'home') return;
 
-    if (!page.$id) {
-        await createPageInAppwrite(page);
-        return;
-    }
-
-    const payload = {
-        pageId: page.id,
-        title: page.title || '',
-        parentId: page.parentId || null,
-        blocks: JSON.stringify(page.blocks),
-        isLocked: page.isLocked || false,
-        password: page.password || null
-    };
-
     try {
-        await databases.updateDocument(DB_ID, COLLECTION_PAGES, page.$id, payload);
+        const payload = {
+            title: page.title || '',
+            parentId: page.parentId || null,
+            blocks: page.blocks || [],
+            isLocked: page.isLocked || false,
+            passwordHash: page.password || null
+        };
+        // K8sバックエンドはUPSERT(PUT)の動きをするよう作られています
+        await apiFetch(`/api/pages/${page.id}`, { method: 'PUT', body: JSON.stringify(payload) });
     } catch (e) {
-        console.error('Update error:', e);
+        // 新規作成が必要な場合のエラーハンドリング
+        if(e.message && e.message.includes('404')) {
+            await createPageInApi(page);
+        } else {
+            console.error('Update error:', e);
+        }
     }
 }
 
 async function saveData() {
     if (state.currentPageId && state.currentPageId !== 'home') {
-        await saveDataToAppwrite(state.pages[state.currentPageId]);
+        await saveDataToApi(state.pages[state.currentPageId]);
     }
     const uiState = {
         expandedNodes: state.expandedNodes,
@@ -932,7 +784,7 @@ document.getElementById('add-page-btn').addEventListener('click', async () => {
     };
     state.pages[id] = newPage;
     state.rootPages.push(id); 
-    await createPageInAppwrite(newPage);
+    await createPageInApi(newPage);
     saveData(); 
     renderTree(); 
     openPage(id); 
@@ -949,7 +801,7 @@ document.getElementById('ctx-add-subpage')?.addEventListener('click', async () =
     };
     state.pages[childId] = childPage;
     if(!state.expandedNodes.includes(contextMenuTargetId)) state.expandedNodes.push(contextMenuTargetId);
-    await createPageInAppwrite(childPage);
+    await createPageInApi(childPage);
     saveData(); 
     renderTree(); 
     openPage(childId); 
@@ -965,9 +817,9 @@ document.getElementById('ctx-delete-page')?.addEventListener('click', () => {
                 await deleteRecursive(child.id);
             }
             const page = state.pages[id];
-            if (page && page.$id) {
+            if (page) {
                 try {
-                    await databases.deleteDocument(DB_ID, COLLECTION_PAGES, page.$id);
+                    await apiFetch(`/api/pages/${page.id}`, { method: 'DELETE' });
                 } catch (err) {
                     console.error('Server delete error:', err);
                 }
@@ -1050,7 +902,7 @@ async function openPage(id) {
         state.currentPageId = 'home';
         document.getElementById('editor-wrapper').classList.add('hidden');
         document.getElementById('empty-state').classList.add('hidden');
-        document.getElementById('inline-loading').classList.add('hidden'); // ★追加
+        document.getElementById('inline-loading').classList.add('hidden');
         document.getElementById('home-wrapper').classList.remove('hidden');
         document.getElementById('mobile-topbar-title').textContent = 'Motion';
         renderTree(); renderHome(); updateBreadcrumb('home');
@@ -1072,7 +924,6 @@ async function openPage(id) {
     
     const page = state.pages[id];
 
-    // ★追加: 既存の表示を隠し、ローディングを表示
     document.getElementById('empty-state').classList.add('hidden'); 
     document.getElementById('home-wrapper').classList.add('hidden');
     
@@ -1081,11 +932,9 @@ async function openPage(id) {
         document.getElementById('editor-wrapper').classList.add('hidden');
         document.getElementById('inline-loading').classList.remove('hidden');
         
-        if (page.$id) {
+        if (page.id) {
             try {
-                const doc = await databases.getDocument(DB_ID, COLLECTION_PAGES, page.$id, [
-                    Query.select(["blocks"])
-                ]);
+                const doc = await apiFetch(`/api/pages/${page.id}`);
                 let parsedBlocks = doc.blocks;
                 if (typeof parsedBlocks === 'string') {
                     try { parsedBlocks = JSON.parse(parsedBlocks); } catch (err) { parsedBlocks = []; }
@@ -1103,7 +952,6 @@ async function openPage(id) {
         }
     }
 
-    // ★追加: 読み込み完了後、ローディングを隠してエディタを表示
     document.getElementById('inline-loading').classList.add('hidden');
     document.getElementById('editor-wrapper').classList.remove('hidden');
 
@@ -1121,25 +969,18 @@ async function openPage(id) {
     renderEditor(page);
     if (window.innerWidth <= 1024) { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
 
-    // ★追加: 画面描画が終わった後、裏側（非同期）で子ページをプリフェッチする
     prefetchChildren(id);
 }
 
 async function prefetchChildren(parentId) {
-    // 現在のページの子ページをすべて取得
     const children = Object.values(state.pages).filter(p => p.parentId === parentId);
-    
-    // すでに読み込み済みのものを除外
-    const toFetch = children.filter(p => p.blocks === null && p.$id);
+    const toFetch = children.filter(p => p.blocks === null && p.id);
     
     if (toFetch.length === 0) return;
 
-    // 並行してAppwriteから取得（※あまりに多いとAPI制限に引っかかる可能性があるため注意）
     const promises = toFetch.map(async (page) => {
         try {
-            const doc = await databases.getDocument(DB_ID, COLLECTION_PAGES, page.$id, [
-                Query.select(["blocks"])
-            ]);
+            const doc = await apiFetch(`/api/pages/${page.id}`);
             let parsedBlocks = doc.blocks;
             if (typeof parsedBlocks === 'string') {
                 try { parsedBlocks = JSON.parse(parsedBlocks); } catch (err) { parsedBlocks = []; }
@@ -1147,14 +988,12 @@ async function prefetchChildren(parentId) {
             if (!Array.isArray(parsedBlocks)) {
                 parsedBlocks = [{ id: generateId(), type: 'p', content: '', children: [] }];
             }
-            // 裏側でこっそりデータをセットしておく
             page.blocks = parsedBlocks;
         } catch(e) {
             console.warn('Prefetch failed for:', page.id, e);
         }
     });
 
-    // 取得完了を待たない（Promise.allSettledを使ってバックグラウンドで処理させる）
     Promise.allSettled(promises);
 }
 
@@ -1209,17 +1048,14 @@ function showPasswordModal(lockParentId, onSuccess) {
         const pass = modalPass.value; 
         const parentPage = state.pages[lockParentId];
         
-        // ★追加：入力されたパスワードを暗号化
         const inputHash = CryptoJS.SHA256(pass).toString();
 
-        // ★追加：保存されている暗号化パスワードと一致するか検証
         if (inputHash === parentPage.password) {
             parentPage.isUnlockedSession = true;
             modalPass.value = '';
             overlay.classList.add('hidden'); 
             if(onSuccess) onSuccess();
         } else {
-            // 一致しない場合はエラーを出して再入力を促す
             alert("パスワードが間違っています。");
             modalPass.value = '';
             modalPass.focus();
@@ -1313,7 +1149,6 @@ function renderBlocks(blockArray, container) {
             content.contentEditable = "false"; 
             content.tabIndex = 0;
             
-            // 旧フォーマットと新フォーマットの互換性維持
             let tData = { widths: [], rows: [["", ""], ["", ""]] };
             try { 
                 if (blockData.content) {
@@ -1327,7 +1162,6 @@ function renderBlocks(blockArray, container) {
             if (!Array.isArray(tData.rows) || tData.rows.length === 0) tData.rows = [["", ""], ["", ""]];
             if (!tData.widths) tData.widths = [];
 
-            // ★追加: 現在フォーカスしている（アクティブな）セルを記録
             let activeCell = { r: 0, c: 0 };
 
             const renderTable = (data) => {
@@ -1345,13 +1179,11 @@ function renderBlocks(blockArray, container) {
                         
                         td.addEventListener('input', () => saveEditorState());
                         
-                        // ★追加: セルがクリック/フォーカスされたら位置を記録
                         td.addEventListener('focus', () => {
                             activeCell = { r: rIdx, c: cIdx };
                         });
                         
                         td.addEventListener('keydown', (e) => {
-                            // ★修正: 'Enter' を追加し、イベント伝播を止めて表外にブロックが作られるのを防ぐ
                             if (['Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
                                 e.stopPropagation();
                             }
@@ -1369,7 +1201,6 @@ function renderBlocks(blockArray, container) {
                                 const prevTr = tr.previousElementSibling;
                                 if(prevTr && prevTr.children[cIdx]) { e.preventDefault(); prevTr.children[cIdx].focus(); setCaretPosition(prevTr.children[cIdx], prevTr.children[cIdx].textContent.length); }
                             } else if (e.key === 'Enter') {
-                                // Shift+Enter（またはEnter）でセル内改行
                                 e.preventDefault(); document.execCommand('insertLineBreak'); saveEditorState(true);
                             }
                         });
@@ -1383,21 +1214,19 @@ function renderBlocks(blockArray, container) {
                     syncData();
                     const newRow = new Array(data.rows[0].length).fill('');
                     data.rows.splice(activeCell.r, 0, newRow);
-                    activeCell.r = Math.min(activeCell.r + 1, data.rows.length - 1); // 挿入分アクティブセルをずらす
+                    activeCell.r = Math.min(activeCell.r + 1, data.rows.length - 1); 
                     renderTable(data); saveEditorState(true); 
                 };
 
-                // ▼新規追加：左に列
                 const addColLeft = document.createElement('button'); addColLeft.textContent = '+ 左に列';
                 addColLeft.onclick = () => { 
                     syncData();
                     data.rows.forEach(r => r.splice(activeCell.c, 0, '')); 
                     data.widths.splice(activeCell.c, 0, '');
-                    activeCell.c = Math.min(activeCell.c + 1, data.rows[0].length - 1); // 挿入分アクティブセルをずらす
+                    activeCell.c = Math.min(activeCell.c + 1, data.rows[0].length - 1); 
                     renderTable(data); saveEditorState(true); 
                 };
 
-                // マウスドラッグでの列幅リサイズ機能
                 table.addEventListener('mousemove', (e) => {
                     if (e.target.tagName === 'TD') {
                         const rect = e.target.getBoundingClientRect();
@@ -1432,7 +1261,6 @@ function renderBlocks(blockArray, container) {
                     }
                 });
 
-                // ★修正3: 「フォーカスしているセル」を基準に行・列を追加/削除する
                 const controls = document.createElement('div');
                 controls.className = 'table-controls';
                 controls.contentEditable = "false";
@@ -1486,7 +1314,6 @@ function renderBlocks(blockArray, container) {
                 controls.append(addRowUp, addRow, addColLeft, addCol, delRow, delCol);
                 content.append(table, controls);
                 
-                // 再描画後に元のセルへフォーカスを戻す
                 setTimeout(() => {
                     if (content.contains(table)) {
                         const targetRow = table.rows[activeCell.r];
@@ -1615,7 +1442,7 @@ function extractBlocks(container) {
         let content = '';
         if (type === 'page_link') content = contentEl?.dataset.linkId || '';
         else if (type === 'image') content = contentEl?.querySelector('img')?.src || '';
-else if (type === 'table') {
+        else if (type === 'table') {
             const rows = [];
             const widths = [];
             wrapper.querySelectorAll('.motion-table tr').forEach((tr, rIdx) => {
@@ -2077,7 +1904,7 @@ function executeCommand(cmdId) {
         state.pages[childId] = childPage;
 
         (async () => {
-            await createPageInAppwrite(childPage);
+            await createPageInApi(childPage);
             const temp = document.createElement('div'); 
             renderBlocks([{id: targetBlock.dataset.id, type: 'page_link', content: childId, children:[]}], temp);
             targetBlock.replaceWith(temp.firstElementChild);
@@ -2226,96 +2053,6 @@ document.getElementById('link-submit')?.addEventListener('click', () => {
     document.getElementById('link-overlay').classList.add('hidden');
 });
 
-// ================= 画像アップロード =================
-document.getElementById('image-upload-input').addEventListener('change', async function(e) {
-    const file = e.target.files[0]; 
-    const target = pendingImageTargetBlock || slashTargetBlock;
-    if(!file || !target) return;
-    
-    await uploadAndInsertImage(file, target);
-    this.value = '';
-    pendingImageTargetBlock = null;
-});
-
-async function uploadAndInsertImage(file, targetBlock) {
-    if (currentMediaBytes + file.size > MAX_MEDIA_BYTES) {
-        alert("添付ファイルの上限 (500MB) を超過します。不要な画像を削除してください。");
-        return;
-    }
-
-    const qualityMode = localStorage.getItem('motion_image_quality') || 'original';
-    let fileToUpload = file;
-
-    if (qualityMode === 'compressed') {
-        fileToUpload = await compressImage(file, 1200, 0.7);
-    }
-
-    try {
-        const safeName = `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.jpg`;
-        const uploadFile = new File([fileToUpload], safeName, { type: fileToUpload.type || 'image/jpeg' });
-
-        const fileUploadRes = await storage.createFile(
-            BUCKET_ID,
-            ID.unique(),
-            uploadFile,
-            [
-                Permission.read(Role.any()),
-                Permission.update(Role.user(currentUser.$id)),
-                Permission.delete(Role.user(currentUser.$id))
-            ]
-        );
-
-        const fileUrl = storage.getFileView(BUCKET_ID, fileUploadRes.$id);
-
-        const temp = document.createElement('div');
-        renderBlocks([{ 
-            id: targetBlock.dataset.id, 
-            type: 'image', 
-            content: fileUrl, 
-            fileId: fileUploadRes.$id, 
-            children:[] 
-        }], temp);
-        
-        targetBlock.replaceWith(temp.firstElementChild);
-        saveEditorState(true); 
-        reinitSortables();
-        calcStorageUsage();
-    } catch (err) {
-        alert("画像のアップロードに失敗しました: " + err.message);
-        console.error(err);
-    }
-}
-
-function compressImage(file, maxWidth, quality) {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-
-                if (width > maxWidth) {
-                    height = Math.round((height * maxWidth) / width);
-                    width = maxWidth;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                canvas.toBlob((blob) => {
-                    resolve(new File([blob], file.name || 'image.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
-                }, 'image/jpeg', quality);
-            };
-        };
-    });
-}
-
 // ================= リッチテキスト Floating Menu =================
 const floatMenu = document.getElementById('floating-menu');
 document.addEventListener('selectionchange', () => {
@@ -2391,7 +2128,6 @@ document.querySelectorAll('.settings-tab').forEach(tab => {
     };
 });
 
-
 document.getElementById('btn-import')?.addEventListener('click', () => document.getElementById('file-import')?.click());
 document.getElementById('file-import')?.addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -2401,15 +2137,14 @@ document.getElementById('file-import')?.addEventListener('change', async (e) => 
         try {
             const imported = JSON.parse(event.target.result);
             if(imported && imported.pages) {
-                alert("クラウドへのインポートを開始します。完了するまでブラウザを閉じないでください...");
+                alert("バックエンドへのインポートを開始します。完了するまでブラウザを閉じないでください...");
                 for (const key of Object.keys(imported.pages)) {
                     const page = imported.pages[key];
                     const existing = state.pages[page.id];
-                    if (existing && existing.$id) {
-                        page.$id = existing.$id; 
-                        await saveDataToAppwrite(page);
+                    if (existing && existing.id) {
+                        await saveDataToApi(page);
                     } else {
-                        await createPageInAppwrite(page);
+                        await createPageInApi(page);
                     }
                 }
                 const uiState = {
@@ -2429,12 +2164,12 @@ document.getElementById('file-import')?.addEventListener('change', async (e) => 
 });
 
 document.getElementById('btn-reset')?.addEventListener('click', async () => {
-    if(confirm("【警告】全データを消去します。\nこの操作はクラウド(Appwrite)上のあなたのデータも完全に削除します。よろしいですか？")) {
+    if(confirm("【警告】全データを消去します。\nこの操作はバックエンド上のあなたのデータも完全に削除します。よろしいですか？")) {
         try {
             if (currentUser) {
-                const response = await databases.listDocuments(DB_ID, COLLECTION_PAGES);
-                for (const doc of response.documents) {
-                    await databases.deleteDocument(DB_ID, COLLECTION_PAGES, doc.$id);
+                const pages = await apiFetch('/api/pages');
+                for (const doc of pages) {
+                    await apiFetch(`/api/pages/${doc.id}`, { method: 'DELETE' });
                 }
             }
             localStorage.clear(); 
@@ -2477,108 +2212,14 @@ document.getElementById('search-input')?.addEventListener('keydown', (e) => {
     }
 });
 
-// ================= 管理者・認証関連 =================
-async function sendAdminRequestEmail(userEmail) {
-    try {
-        const serviceID = 'service_iwdudmi';
-        const templateID = 'template_oba4fva';
-        const publicKey = 'Rr8sXv8O4BghLKFMX';
-
-        const templateParams = {
-            admin_email: 'thonglo02cocoa@gmail.com',
-            request_user_email: userEmail,
-            message: `新規ユーザー (${userEmail}) からアカウント開設のリクエストがありました。管理画面から承認を行ってください。`
-        };
-
-        await emailjs.send(serviceID, templateID, templateParams, publicKey);
-    } catch (err) {
-        console.error('管理者へのメール送信に失敗しました:', err);
-    }
-}
-
-async function approveAccount(targetUserId) {
-    try {
-        await databases.updateDocument(DB_ID, 'users', targetUserId, { status: 'approved' });
-        alert('アカウントを承認しました。ユーザーはログイン可能になります。');
-    } catch (err) {
-        alert('承認エラー: ' + err.message);
-    }
-}
-
-async function checkPendingUsersForAdmin() {
-    try {
-        const response = await databases.listDocuments(DB_ID, 'users', [
-            Query.equal('status', 'pending')
-        ]);
-
-        if (response.documents.length > 0) {
-            const count = response.documents.length;
-            const emails = response.documents.map(doc => doc.email).join(', ');
-            
-            setTimeout(() => {
-                if (confirm(`【管理者通知】\n現在、${count}件の新規アカウント承認待ちがあります。\n対象: ${emails}\n\n今すぐ設定画面から承認しますか？`)) {
-                    document.getElementById('settings-overlay').classList.remove('hidden');
-                    document.querySelector('.settings-tab[data-tab="admin"]')?.click();
-                }
-            }, 500);
-        }
-    } catch (err) {
-        console.error('承認待ちユーザーの確認に失敗しました:', err);
-    }
-}
-
+// ================= 管理者用 (非Appwrite化に伴い一時無効化) =================
+// ※新しいAPIバックエンドには管理・承認用エンドポイントをまだ設けていないため、
+// 今回はメッセージのみを表示し、動作を無効化しています。
 document.querySelector('.settings-tab[data-tab="admin"]')?.addEventListener('click', async () => {
     const listContainer = document.getElementById('admin-pending-users-list');
     if (!listContainer) return;
     
-    listContainer.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">読み込み中...</p>';
-
-    try {
-        const response = await databases.listDocuments(DB_ID, 'users', [
-            Query.equal('status', 'pending')
-        ]);
-
-        if (response.documents.length === 0) {
-            listContainer.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">現在、承認待ちのユーザーはいません。</p>';
-            return;
-        }
-
-        listContainer.innerHTML = '';
-        response.documents.forEach(doc => {
-            const item = document.createElement('div');
-            item.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:8px 12px; margin-bottom:8px; border:1px solid var(--border); border-radius:6px; background:var(--bg-hover);';
-            
-            item.innerHTML = `
-                <div>
-                    <div style="font-weight:500; font-size:14px;">${doc.email}</div>
-                    <div style="font-size:11px; color:var(--text-muted);">申請日時: ${new Date(doc.$createdAt).toLocaleString()}</div>
-                </div>
-                <button class="primary-btn" style="padding:4px 12px; font-size:12px; width:auto;" data-id="${doc.$id}">承認する</button>
-            `;
-
-            item.querySelector('button').onclick = async () => {
-                const btn = item.querySelector('button');
-                btn.disabled = true;
-                btn.textContent = '処理中...';
-                
-                try {
-                    await databases.updateDocument(DB_ID, 'users', doc.$id, {
-                        status: 'approved'
-                    });
-                    alert(`${doc.email} のアカウントを承認しました！`);
-                    document.querySelector('.settings-tab[data-tab="admin"]').click();
-                } catch (e) {
-                    alert('承認エラー: ' + e.message);
-                    btn.disabled = false;
-                    btn.textContent = '承認する';
-                }
-            };
-
-            listContainer.appendChild(item);
-        });
-    } catch (err) {
-        listContainer.innerHTML = '<p style="font-size:13px; color:var(--danger);">リストの取得に失敗しました。</p>';
-    }
+    listContainer.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">管理者機能は現在バックエンド移行中のためご利用いただけません。</p>';
 });
 
 document.addEventListener('click', (e) => {
@@ -2698,21 +2339,17 @@ document.addEventListener('touchend', e => {
 }, { passive: true });
 
 function handleSwipe() {
-    const swipeThreshold = 50; // スワイプと判定する移動距離（px）
+    const swipeThreshold = 50; 
     const isMobile = window.innerWidth <= 768;
     
-    // PC画面では何もしない
     if (!isMobile) return;
 
-    // 右スワイプ（メニューを開く）
     if (touchEndX - touchStartX > swipeThreshold) {
-        // 誤作動を防ぐため、画面の左端（50px以内）からのスワイプのみ反応させる
         if (touchStartX < 50) {
             sidebar.classList.add('open');
             sidebarOverlay.classList.add('active');
         }
     } 
-    // 左スワイプ（メニューを閉じる）
     else if (touchStartX - touchEndX > swipeThreshold) {
         if (sidebar.classList.contains('open')) {
             sidebar.classList.remove('open');
@@ -2721,21 +2358,17 @@ function handleSwipe() {
     }
 }
 
-// ================= モバイルツールバー制御 (UI/UX最適化版) =================
-
+// ================= モバイルツールバー制御 =================
 let lastActiveContentEl = null;
 
-// エディタ内のフォーカスを常に監視し、最後に触ったブロックを記憶
 document.addEventListener('focusin', (e) => {
     if (e.target && e.target.classList && e.target.classList.contains('block-content')) {
         lastActiveContentEl = e.target;
     }
 });
 
-// ツールバーのボタン押下時にフォーカスが外れるのを防ぐ処理
 document.querySelectorAll('.m-tool-btn').forEach(btn => {
     const handleToolbarTap = (e) => {
-        // ★最重要: preventDefaultによりフォーカス喪失を防ぎ、キーボードを閉じさせない
         e.preventDefault(); 
         
         const action = btn.dataset.action;
@@ -2745,7 +2378,6 @@ document.querySelectorAll('.m-tool-btn').forEach(btn => {
             mobileToolbarCmd(action, action);
         }
     };
-    // PC・スマホ両方のタッチ/クリックイベントで発火
     btn.addEventListener('mousedown', handleToolbarTap);
     btn.addEventListener('touchstart', handleToolbarTap, { passive: false });
 });
@@ -2759,11 +2391,9 @@ function mobileToolbarCmd(action, type) {
         pendingImageTargetBlock = wrapper;
         document.getElementById('image-upload-input').click();
     } else if (['bold', 'italic'].includes(action)) {
-        // テキスト装飾
         document.execCommand(action, false, null);
         saveEditorState();
     } else {
-        // ブロック変換処理
         const temp = document.createElement('div');
         const content = lastActiveContentEl.innerHTML || '';
         const extracted = { id: wrapper.dataset.id, type: type, content: content, children: [] };
@@ -2777,7 +2407,6 @@ function mobileToolbarCmd(action, type) {
         const newEl = temp.firstElementChild;
         wrapper.replaceWith(newEl);
         
-        // 変換後、新しいブロックに確実にフォーカスを戻してキーボードを維持する
         const newContent = newEl.querySelector('.block-content');
         if (newContent) {
             newContent.focus();
@@ -2791,23 +2420,19 @@ function mobileToolbarCmd(action, type) {
     }
 }
 
-// ================= iOS最適化: Visual Viewport API による追従 =================
 if (window.visualViewport) {
     const updateViewportPos = () => {
         const vv = window.visualViewport;
         if (!vv || window.innerWidth > 1024) return;
         
-        // 1. ツールバーの追従 (キーボード上端に配置)
         const tb = document.getElementById('mobile-toolbar');
         if (tb) {
             const topPos = vv.offsetTop + vv.height - 50; 
             tb.style.top = `${topPos > 0 ? topPos : 0}px`;
         }
 
-        // 2. ボトムシートの追従 (キーボードを除いた表示領域にピッタリ合わせる)
         const sheetOverlay = document.getElementById('mobile-bottom-sheet-overlay');
         if (sheetOverlay) {
-            // Visual Viewportの offsetTop(画面上部からのズレ) と height(見えている高さ) を適用
             sheetOverlay.style.top = `${vv.offsetTop}px`;
             sheetOverlay.style.height = `${vv.height}px`;
         }
@@ -2815,12 +2440,10 @@ if (window.visualViewport) {
 
     window.visualViewport.addEventListener('resize', updateViewportPos);
     window.visualViewport.addEventListener('scroll', updateViewportPos);
-    
-    // 初期配置用
     setTimeout(updateViewportPos, 100);
 }
 
-// ================= ボトムシートメニュー (モバイル専用コマンドメニュー) =================
+// ================= ボトムシートメニュー =================
 const sheetOverlay = document.getElementById('mobile-bottom-sheet-overlay');
 const sheetContent = document.getElementById('mobile-sheet-content');
 
@@ -2831,7 +2454,6 @@ function openMobileBottomSheet() {
     
     slashTargetBlock = wrapper;
     
-    // コマンド一覧を生成
     sheetContent.innerHTML = '';
     COMMANDS.forEach(cmd => {
         const item = document.createElement('div');
@@ -2854,7 +2476,6 @@ function openMobileBottomSheet() {
             if (e.touches.length > 0) {
                 const moveX = Math.abs(e.touches[0].clientX - startX);
                 const moveY = Math.abs(e.touches[0].clientY - startY);
-                // 上下や左右に一定以上指を動かした場合は「スクロール操作」と判定
                 if (moveX > 8 || moveY > 8) {
                     isSwiping = true;
                 }
@@ -2862,19 +2483,15 @@ function openMobileBottomSheet() {
         }, { passive: true });
 
         const handleItemTap = (e) => {
-            // スワイプ（スクロール）中の場合は機能を実行しない
             if (isSwiping) return;
-
-            e.preventDefault(); // フォーカス外れ防止
+            e.preventDefault(); 
             closeMobileBottomSheet();
             executeMobileCommand(cmd.id);
         };
         
         item.addEventListener('mousedown', handleItemTap);
         item.addEventListener('touchend', (e) => {
-            if (!isSwiping) {
-                handleItemTap(e);
-            }
+            if (!isSwiping) handleItemTap(e);
         });
 
         sheetContent.appendChild(item);
@@ -2887,7 +2504,6 @@ function closeMobileBottomSheet() {
     if (sheetOverlay) sheetOverlay.classList.add('hidden');
 }
 
-// 余白（暗転している背景）のタップで確実にキャンセルして閉じる
 if (sheetOverlay) {
     sheetOverlay.addEventListener('mousedown', (e) => {
         if (e.target === sheetOverlay) {
@@ -2908,7 +2524,6 @@ if (closeSheetBtn) {
     closeSheetBtn.addEventListener('click', closeMobileBottomSheet);
 }
 
-// モバイル専用のコマンド実行関数（PC版の `/` 削除ロジックに影響されないように分離）
 function executeMobileCommand(cmdId) {
     if (!slashTargetBlock) return;
     const targetBlock = slashTargetBlock;
@@ -2917,7 +2532,6 @@ function executeMobileCommand(cmdId) {
     contentEl.focus(); 
     setCaretPosition(contentEl, contentEl.textContent.length);
     
-    // 範囲選択状態を保存
     const sel = window.getSelection();
     if (sel.rangeCount > 0) {
         savedCaretRange = sel.getRangeAt(0).cloneRange();
@@ -2954,7 +2568,7 @@ function executeMobileCommand(cmdId) {
         state.pages[childId] = childPage;
 
         (async () => {
-            await createPageInAppwrite(childPage);
+            await createPageInApi(childPage);
             const temp = document.createElement('div'); 
             renderBlocks([{id: targetBlock.dataset.id, type: 'page_link', content: childId, children:[]}], temp);
             targetBlock.replaceWith(temp.firstElementChild);
@@ -2972,10 +2586,9 @@ function executeMobileCommand(cmdId) {
         targetBlock.replaceWith(newEl); newEl.querySelector(':scope > .block-main > .block-content').focus();
         saveEditorState(true); reinitSortables();
     }
-    
 }
 
-// ================= 全部入りZIPエクスポート処理（究極の堅牢版） =================
+// ================= 全部入りZIPエクスポート処理 (K8s API仕様) =================
 document.getElementById('btn-export')?.addEventListener('click', async (e) => {
     const btn = e.target;
     const originalText = btn.textContent;
@@ -2994,113 +2607,84 @@ document.getElementById('btn-export')?.addEventListener('click', async (e) => {
 });
 
 async function exportAllDataAndImages() {
-    alert("クラウドから全データを取得・統合してZIP化します。\nデータ量によって数十秒かかる場合があります。このままお待ちください...");
+    alert("バックエンドから全データを取得・統合してZIP化します。\nデータ量によって数十秒かかる場合があります。このままお待ちください...");
     
     const zip = new JSZip();
-    
-    // 1. ローカルの最新状態（編集中のデータ）をベースにする
     let exportData = JSON.parse(JSON.stringify(state));
     
-    // 2. クラウド（Appwrite）から全ページデータを確実に取得する（ページネーション対応）
-    let allPages = [];
-    let lastId = null;
-    let hasMore = true;
+    // バックエンドからすべてのページ情報（メタデータ）を取得
+    const allPages = await apiFetch('/api/pages');
 
-    while (hasMore) {
-        // Appwrite v13 のクエリ構文
-        const queries = [Query.limit(100)];
-        if (lastId) queries.push(Query.cursorAfter(lastId));
-
-        const response = await databases.listDocuments(DB_ID, COLLECTION_PAGES, queries);
-        allPages.push(...response.documents);
-
-        if (response.documents.length < 100) {
-            hasMore = false;
-        } else {
-            lastId = response.documents[response.documents.length - 1].$id;
+    // 不足しているブロックデータをひとつずつ取得して補完
+    for (const doc of allPages) {
+        let page = exportData.pages[doc.id];
+        
+        if (!page) {
+            exportData.pages[doc.id] = {
+                id: doc.id,
+                title: doc.title || '',
+                parentId: doc.parent_id || null,
+                blocks: null,
+                isLocked: doc.is_locked || false,
+                password: doc.password_hash || null
+            };
+            page = exportData.pages[doc.id];
         }
+
+        if (!page.blocks || page.blocks === null || page.blocks.length === 0) {
+            try {
+                const fullDoc = await apiFetch(`/api/pages/${doc.id}`);
+                let parsedBlocks = fullDoc.blocks;
+                
+                let parseAttempts = 0;
+                while (typeof parsedBlocks === 'string' && parseAttempts < 5) {
+                    try { parsedBlocks = JSON.parse(parsedBlocks); } catch (e) { break; }
+                    parseAttempts++;
+                }
+                page.blocks = Array.isArray(parsedBlocks) ? parsedBlocks : (parsedBlocks ? [parsedBlocks] : []);
+            } catch (err) {
+                console.warn(`ページ（ID: ${doc.id}）の取得に失敗しました。`);
+            }
+        }
+        delete page.isUnlockedSession;
     }
 
-    // 3. ローカルデータに「未読み込みのページ」や「欠けているデータ」があればクラウドデータで補完
-    allPages.forEach(doc => {
-        let page = exportData.pages[doc.pageId];
-        
-        // もしローカルのstateに存在しないページがあれば追加
-        if (!page) {
-            exportData.pages[doc.pageId] = {
-                id: doc.pageId,
-                title: doc.title || '',
-                parentId: doc.parentId || null,
-                blocks: null,
-                isLocked: doc.isLocked || false,
-                password: doc.password || null
-            };
-            page = exportData.pages[doc.pageId];
-        }
-
-        // ブロックがまだ読み込まれていない（null または 空）場合のみクラウドデータで上書き
-        // ※こうすることで、今エディタで編集したばかりの最新状態を維持できる
-        if (!page.blocks || page.blocks === null || page.blocks.length === 0) {
-            let parsedBlocks = doc.blocks;
-            let parseAttempts = 0;
-            // 稀に文字列化が二重になっていることがあるため、配列になるまで展開
-            while (typeof parsedBlocks === 'string' && parseAttempts < 5) {
-                try { parsedBlocks = JSON.parse(parsedBlocks); } catch (e) { break; }
-                parseAttempts++;
-            }
-            page.blocks = Array.isArray(parsedBlocks) ? parsedBlocks : (parsedBlocks ? [parsedBlocks] : []);
-        }
-
-        // JSONに含めたくないAppwrite用のプロパティを消去
-        delete page.isUnlockedSession;
-        delete page.$id; 
-    });
-
-    // 4. 完成した全データを一度「ただの文字列」にする
     let jsonString = JSON.stringify(exportData, null, 2);
 
-    // 5. 文字列全体からAppwriteの「ファイルID」を無条件で全て抽出する
-    // パターン: /files/〇〇〇/view または /files/〇〇〇/download
-    const fileIdRegex = /\/files\/([a-zA-Z0-9_-]+)\/(?:view|download)/g;
+    // 文字列全体から「アップロード画像のファイル名」を全て抽出
+    // パターン: /uploads/img_xxxxx.jpg
+    const fileIdRegex = /\/uploads\/(img_[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/g;
     const matches = [...jsonString.matchAll(fileIdRegex)];
-    const fileIds = [...new Set(matches.map(m => m[1]))]; // 重複を排除
+    const fileNames = [...new Set(matches.map(m => m[1]))];
 
-    console.log(`抽出された画像ファイルID: ${fileIds.length}件`, fileIds);
+    console.log(`抽出された画像ファイル: ${fileNames.length}件`, fileNames);
 
-    // 6. 画像ファイルを一つずつダウンロードしてZIPに追加
     const imgFolder = zip.folder("images");
-    for (const fileId of fileIds) {
+    for (const fileName of fileNames) {
         try {
-            // SDKを使って安全なダウンロードURLを生成
-            const urlObj = storage.getFileView(BUCKET_ID, fileId);
-            const urlStr = urlObj.toString();
-            
-            const response = await fetch(urlStr);
+            const response = await fetch(`${API_BASE}/uploads/${fileName}`);
             if (!response.ok) throw new Error(`HTTPエラー: ${response.status}`);
             
             const blob = await response.blob();
-            imgFolder.file(`${fileId}.png`, blob);
+            imgFolder.file(fileName, blob);
             
         } catch (error) {
-            console.warn(`画像（ID: ${fileId}）の取得に失敗しました。スキップします。`, error);
+            console.warn(`画像（${fileName}）の取得に失敗しました。スキップします。`, error);
         }
     }
 
-    // 7. JSON文字列の中にある「Appwriteの画像URL」を全て「images/〇〇.png」に一括置換
-    // クォーテーションで囲まれているURLの塊を正確に捉えてローカルパスに置き換える
-    const replaceRegex = /https:\/\/[^"'\\]+\/files\/([a-zA-Z0-9_-]+)\/(?:view|download)[^"'\\]*/g;
-    jsonString = jsonString.replace(replaceRegex, 'images/$1.png');
+    // JSON文字列の中にある「/uploads/xxx」を全て「images/xxx」に一括置換
+    const replaceRegex = /https?:\/\/[^"'\\]+\/uploads\/(img_[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)/g;
+    jsonString = jsonString.replace(replaceRegex, 'images/$1');
 
-    // 8. 置換済みのJSONファイルをZIPのルートに登録
     zip.file("motion_backup.json", jsonString);
 
-    // 9. ZIPファイルを生成してダウンロード
     const zipBlob = await zip.generateAsync({ type: "blob" });
     const downloadLink = document.createElement("a");
     downloadLink.href = URL.createObjectURL(zipBlob);
     downloadLink.download = `motion_backup_${new Date().toISOString().slice(0,10)}.zip`;
     downloadLink.click();
     
-    alert(`エクスポートが完了しました！\n画像 ${fileIds.length} 枚をZIPに格納しました。`);
+    alert(`エクスポートが完了しました！\n画像 ${fileNames.length} 枚をZIPに格納しました。`);
 }
 // =========================================================

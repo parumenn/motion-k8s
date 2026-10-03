@@ -440,23 +440,36 @@ async function calcStorageUsage() {
     const barFill = document.getElementById('storage-bar-fill');
     if (!usageText) return;
 
-    let textBytes = 0;
+    usageText.innerHTML = `テキスト・添付ファイル容量を計算中...`;
 
-    // state.pages 全体を一つのJSON文字列にして正確な容量を算出する
+    // テキストデータの計算
+    let textBytes = 0;
     try {
         const allPagesData = JSON.stringify(state.pages);
         textBytes = new Blob([allPagesData], { type: 'application/json' }).size;
-    } catch (e) {
-        console.error('容量計算エラー:', e);
-    }
+    } catch (e) {}
 
-    // UIへの反映（添付ファイル部分は自作APIの仕様に合わせてテキスト化）
-    usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: 容量取得非対応 (自作API移行済)`;
+    // 画像データの計算
+    let mediaBytes = 0;
+    try {
+        mediaBytes = await fetchTotalMediaSize();
+    } catch (e) {}
+
+    currentMediaBytes = mediaBytes;
+    const totalBytes = textBytes + mediaBytes;
+
+    // UIへの反映
+    usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: ${formatBytes(mediaBytes)}`;
     
     if (limitText && barFill) {
-        barFill.style.width = `0%`;
-        barFill.classList.remove('warning', 'danger');
-        limitText.textContent = ``;
+        const usagePercent = Math.min(100, (totalBytes / MAX_MEDIA_BYTES) * 100);
+        barFill.style.width = `${usagePercent}%`;
+        
+        if (usagePercent > 90) barFill.classList.add('danger');
+        else if (usagePercent > 70) barFill.classList.add('warning');
+        else barFill.classList.remove('warning', 'danger');
+        
+        limitText.textContent = `${formatBytes(totalBytes)} / ${formatBytes(MAX_MEDIA_BYTES)}`;
     }
 }
 
@@ -2692,3 +2705,44 @@ async function exportAllDataAndImages() {
     alert(`エクスポートが完了しました！\n画像 ${fileNames.length} 枚をZIPに格納しました。`);
 }
 // =========================================================
+async function fetchTotalMediaSize() {
+    const imageUrls = new Set();
+
+    // 1. 全ページから画像URLを抽出
+    Object.values(state.pages).forEach(page => {
+        const searchBlocks = (blocks) => {
+            if (!Array.isArray(blocks)) return;
+            for (let b of blocks) {
+                if (b.type === 'image' && b.content) {
+                    imageUrls.add(b.content);
+                }
+                if (b.children) searchBlocks(b.children);
+            }
+        };
+        
+        let parsedBlocks = page.blocks;
+        if (typeof parsedBlocks === 'string') {
+            try { parsedBlocks = JSON.parse(parsedBlocks); } catch (e) { parsedBlocks = []; }
+        }
+        searchBlocks(parsedBlocks);
+    });
+
+    // 2. HEADリクエストで各画像の容量を取得
+    const promises = Array.from(imageUrls).map(async (url) => {
+        try {
+            const fetchUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+            const res = await fetch(fetchUrl, { method: 'HEAD' });
+            if (res.ok) {
+                const len = res.headers.get('content-length');
+                if (len) return parseInt(len, 10);
+            }
+        } catch(e) {
+            console.warn('サイズ取得エラー:', url);
+        }
+        return 0;
+    });
+
+    // 3. 全ての容量を合算
+    const sizes = await Promise.all(promises);
+    return sizes.reduce((sum, size) => sum + size, 0);
+}

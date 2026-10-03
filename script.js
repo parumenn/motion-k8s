@@ -441,12 +441,16 @@ async function calcStorageUsage() {
     if (!usageText) return;
 
     let textBytes = 0;
-    Object.values(state.pages).forEach(page => {
-        const blocksData = page.blocks || [];
-        const pageString = typeof blocksData === 'string' ? blocksData : JSON.stringify(blocksData);
-        textBytes += new Blob([pageString]).size;
-    });
 
+    // state.pages 全体を一つのJSON文字列にして正確な容量を算出する
+    try {
+        const allPagesData = JSON.stringify(state.pages);
+        textBytes = new Blob([allPagesData], { type: 'application/json' }).size;
+    } catch (e) {
+        console.error('容量計算エラー:', e);
+    }
+
+    // UIへの反映（添付ファイル部分は自作APIの仕様に合わせてテキスト化）
     usageText.innerHTML = `テキストデータ: ${formatBytes(textBytes)}<br>添付ファイル: 容量取得非対応 (自作API移行済)`;
     
     if (limitText && barFill) {

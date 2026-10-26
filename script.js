@@ -283,7 +283,19 @@ async function initApp() {
         });
 
         renderTree();
-        openPage('home');
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetPage = urlParams.get('page');
+        
+        if (targetPage && state.pages[targetPage]) {
+            openPage(targetPage, true); // true = historyに追加しない
+        } else {
+            if (targetPage) {
+                // 存在しないページIDが指定された場合
+                alert("指定されたページは存在しないか、削除されています。");
+                history.replaceState(null, '', window.location.pathname);
+            }
+            openPage('home', true);
+        }
         calcStorageUsage();
     } catch (err) {
         if (syncLoader) syncLoader.classList.add('hidden');
@@ -914,7 +926,7 @@ function renderHome() {
 document.getElementById('btn-home').addEventListener('click', () => openPage('home'));
 
 
-async function openPage(id) {
+async function openPage(id, isHistoryBack = false) {
     if (id === 'home') {
         state.currentPageId = 'home';
         document.getElementById('editor-wrapper').classList.add('hidden');
@@ -922,6 +934,11 @@ async function openPage(id) {
         document.getElementById('inline-loading').classList.add('hidden');
         document.getElementById('home-wrapper').classList.remove('hidden');
         document.getElementById('mobile-topbar-title').textContent = 'Motion';
+        
+        document.title = 'Motion'; // タブ名を更新
+        // 履歴を更新（サブディレクトリ配置を考慮し pathname を使用）
+        if (!isHistoryBack) history.pushState({ pageId: 'home' }, '', window.location.pathname);
+        
         renderTree(); renderHome(); updateBreadcrumb('home');
         if (window.innerWidth <= 1024) { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
         return;
@@ -934,7 +951,7 @@ async function openPage(id) {
                 state.expandedNodes.push(lockedBy.id);
                 saveData();
             }
-            openPage(id);
+            openPage(id, isHistoryBack); // 再帰呼び出し時もフラグを引き継ぐ
         }); 
         return; 
     }
@@ -978,6 +995,10 @@ async function openPage(id) {
     pageTitleEl.textContent = page.title || '';
     document.getElementById('mobile-topbar-title').textContent = page.title || '無題';
     
+    document.title = `${page.title || '無題'} - Motion`; // タブ名を更新
+    // URLを更新
+    if (!isHistoryBack) history.pushState({ pageId: id }, '', `${window.location.pathname}?page=${id}`);
+    
     const lockBtn = document.getElementById('lock-btn');
     if (page.isLocked) { lockBtn.classList.add('locked'); document.getElementById('lock-text').textContent = 'ロックを解除'; }
     else { lockBtn.classList.remove('locked'); document.getElementById('lock-text').textContent = 'ロック'; }
@@ -1019,6 +1040,7 @@ pageTitleEl.addEventListener('input', (e) => {
     const val = e.target.textContent;
     state.pages[state.currentPageId].title = val; 
     document.getElementById('mobile-topbar-title').textContent = val || '無題';
+    document.title = `${val || '無題'} - Motion`; // ★追加：ブラウザのタブ名も同期
     renderTree(); 
     updateBreadcrumb(state.currentPageId);
     document.querySelectorAll(`.block-content[data-link-id="${state.currentPageId}"]`).forEach(el => el.innerHTML = `📄 ${val || '無題'}`);
@@ -1080,7 +1102,22 @@ function showPasswordModal(lockParentId, onSuccess) {
     };
 }
 
-document.getElementById('modal-cancel')?.addEventListener('click', () => document.getElementById('overlay').classList.add('hidden'));
+document.getElementById('modal-cancel')?.addEventListener('click', () => {
+    document.getElementById('overlay').classList.add('hidden');
+    
+    // キャンセル時は、現在実際に描画されているページIDに合わせてURLを修正する
+    const currentId = state.currentPageId || 'home';
+    if (currentId === 'home') {
+        history.replaceState({ pageId: 'home' }, '', window.location.pathname);
+    } else {
+        history.replaceState({ pageId: currentId }, '', `${window.location.pathname}?page=${currentId}`);
+    }
+    
+    // アプリを開いて最初にアクセスしたURLがロックされており、キャンセルした場合のフェイルセーフ
+    if (!state.currentPageId) {
+        openPage('home', true);
+    }
+});
 document.getElementById('lock-btn')?.addEventListener('click', () => {
     const page = state.pages[state.currentPageId];
     if (page.isLocked) {
@@ -2746,3 +2783,15 @@ async function fetchTotalMediaSize() {
     const sizes = await Promise.all(promises);
     return sizes.reduce((sum, size) => sum + size, 0);
 }
+// ブラウザの戻る/進むイベントを検知
+window.addEventListener('popstate', (e) => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const pageId = urlParams.get('page') || 'home';
+    
+    if (pageId !== 'home' && !state.pages[pageId]) {
+        // 履歴上のページが既に削除されている場合はホームへ
+        openPage('home', true);
+        return;
+    }
+    openPage(pageId, true);
+});

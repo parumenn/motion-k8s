@@ -1008,6 +1008,11 @@ async function openPage(id, isHistoryBack = false) {
     if (window.innerWidth <= 1024) { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
 
     prefetchChildren(id);
+    const newUrl = id === 'home' ? '/' : `/?page=${id}`;
+    // 現在のURLと異なる場合のみ pushState を実行
+    if (window.location.pathname + window.location.search !== newUrl) {
+        history.pushState({ pageId: id }, '', newUrl);
+    }
 }
 
 async function prefetchChildren(parentId) {

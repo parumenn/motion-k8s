@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script type="text/javascript" nonce="bff5c105e9c3497db37830a0264" src="//local.adguard.org?ts=1786172723372&amp;type=content-script&amp;dmn=mail-attachment.googleusercontent.com&amp;url=https%3A%2F%2Fmail-attachment.googleusercontent.com%2Fattachment%2Fu%2F0%2F%3Fui%3D2%26ik%3Df3117add55%26attid%3D0.1%26permmsgid%3Dmsg-a%3Ar-3545140380221300374%26th%3D19fe03dc851f989c%26view%3Datt%26zw%26disp%3Dsafe%26saddbat%3DANGjdJ-nGi8a7lwdeY_EUQFotWRqxLBNje_-4DN0yrsPXDUfwhZhn9OELWS8XMVG-gFIbVKlOt6duYYfEMV20xsKFZRbMzwYtZZS8LidTuJ-0ouZAyxdjm-zfSy189mjtCLRnHF1UjZHJ2Pa2M7ZJ9p0isfTnROycMvM5hIbWiXdHT4DiI-p0EaMmdllICKcYExDywX0YLM_sY0qysXV61FxZevTS-ScQOG6-9kcWXSdEUhZCMhnsGzrXKet1_uQZMjeLBFmWWcQvlssCMkzBbvDQem55StoreyKF5ZLPqhklAgYtiV2aQVklMOXWI3RzCJU6YUIYp0iXSOV_dI6p9otwWQJuycIoWmi3j-c_35Xcv4539Lvaja08mzStlRKCw5R6ldqFVkf-yw235AdH4XK5NOmDjDVdAjz-8xKunWzrFYvI9kXR4tYeDuLUUi-Na0i69Qljhs9eoiuQHugcTMI5Mod59aUv0lyaT0IPSNbBOZXWb_aB-yYqe0_9vPs6yIZ7wkNCEwF-u2yLWUflA-ideINcjYK081-ZOwXXzyDV9MBN7zzOhiXhC49XW7JFt9lOCJv2sjup3FsgpfCPiLm491hAy4wjpuG5DrBjJJMJ8VuNYxBaiTPvzIqmgxGL7mEdAbxr6XppMy23cCinNzpw2a3BewT8TNAFLNPRVVCBZP97xGmqV_XmuqL7WCyFAUHOA0gEcAYWap_zudraeDdRL1XQZGRvmH22jFdV9CJgEeTBsSI5B7B94MeT0CR8w2tafkz_vJ18Zc5CstzZpfnMunQsbajmIjZWRU3cGB4fLXmNoW5fJwziZtc-5Oc8ePt5ONUwXSWEXnZCVgeBpaatu_C-Sn9HPS3RJKzqyCJqawFeNsK99HypVUoZ2b2-xitzj6O_8RILF1M0ZBNMx90VUSMspLZqw15rkEnpxsA0BsEGyU1IvkTHTj5AbLHvj12M5Z_5MdZZdzxKDbnhM-eyisYL37Lt5_73F5vuumrHFFArsEgr2FxlfGs6bGZMQ_jEyrT4PatGfIOdylbFaONzHEI6fxu6SoEgiUmEg&amp;app=chrome.exe&amp;css=3&amp;js=1&amp;rel=0&amp;rji=0&amp;sbe=1"></script><script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Motion</title>
@@ -246,16 +246,20 @@
                     </div>
                     <p id="storage-limit-text" class="modal-desc" style="text-align:right; font-size:12px; margin-top:4px;"></p>
 
+                    <div id="storage-warning-text" class="hidden" style="color: #d93025; font-size: 13px; margin-top: 8px; font-weight: 500;">
+                        ※ストレージ使用量が90%を超えています。不要な画像を削除してください。
+                    </div>
 
-<div id="storage-warning-text" class="hidden" style="color: #d93025; font-size: 13px; margin-top: 8px; font-weight: 500;">
-    ※ストレージ使用量が90%を超えています。不要な画像を削除してください。
-</div>
+                    <!-- パスワード変更UIのコンテナを追加 -->
+                    <div id="password-change-container" style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px;">
+                        <h4>パスワード変更</h4>
+                        <input type="password" id="input-current-password" placeholder="現在のパスワード" style="padding: 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-hover); color: var(--text-main);">
+                        <input type="password" id="input-new-password" placeholder="新しいパスワード" style="padding: 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-hover); color: var(--text-main);">
+                        <input type="password" id="input-confirm-new-password" placeholder="新しいパスワード（確認用）" style="padding: 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-hover); color: var(--text-main);">
+                        <button id="btn-change-password" class="primary-btn" style="margin-top: 8px;">パスワード変更</button>
+                    </div>
 
-                    <h4 style="margin-top:24px;">パスワード変更</h4>
-                    <input type="password" id="change-pass-old" placeholder="現在のパスワード">
-                    <input type="password" id="change-pass-new" placeholder="新しいパスワード">
-                    <button id="btn-change-pass" class="primary-btn">パスワード更新</button>
-                    <button id="btn-logout" class="danger-btn" style="margin-top:24px;">ログアウト</button>
+                    <button id="btn-logout" class="danger-btn" style="margin-top:32px;">ログアウト</button>
                 </div>
 
                 <!-- データ管理 -->

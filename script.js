@@ -2490,6 +2490,13 @@ if (window.visualViewport) {
             tb.style.top = `${topPos > 0 ? topPos : 0}px`;
         }
 
+        // サイドバー（ドロワー）も表示領域に追随させ、フッターが画面外に落ちないようにする
+        const sidebarEl = document.getElementById('sidebar');
+        if (sidebarEl) {
+            sidebarEl.style.top = `${vv.offsetTop}px`;
+            sidebarEl.style.height = `${vv.height}px`;
+        }
+
         const sheetOverlay = document.getElementById('mobile-bottom-sheet-overlay');
         if (sheetOverlay) {
             sheetOverlay.style.top = `${vv.offsetTop}px`;

@@ -501,7 +501,8 @@ async function loadDataFromApi() {
                 parentId: doc.parent_id || null, 
                 blocks: null, 
                 isLocked: doc.is_locked || false,
-                password: doc.password_hash || null
+                password: doc.password_hash || null,
+                sortOrder: doc.sort_order ?? 0
             };
             if (!doc.parent_id) state.rootPages.push(doc.id);
         });
@@ -743,13 +744,36 @@ const sidebar = document.getElementById('sidebar'), sidebarOverlay = document.ge
 let contextMenuTargetId = null;
 const contextMenuEl = document.getElementById('context-menu');
 
+// ---- ページ並び順（#3）用ヘルパー ----
+let draggedPageId = null;
+// 同じ親を持つ兄弟ページの id 一覧を sortOrder 順で返す
+function getSiblingIds(parentId) {
+    const ids = parentId === null
+        ? [...state.rootPages]
+        : Object.values(state.pages).filter(p => p.parentId === parentId).map(p => p.id);
+    return ids.sort((a, b) => (state.pages[a]?.sortOrder ?? 0) - (state.pages[b]?.sortOrder ?? 0));
+}
+// 兄弟の順序をローカルに反映してサーバーへ送る（失敗時は次回読込でサーバー順に戻る）
+async function applySiblingOrder(parentId, orderedIds) {
+    orderedIds.forEach((pid, i) => { if (state.pages[pid]) state.pages[pid].sortOrder = i; });
+    if (parentId === null) state.rootPages = [...orderedIds];
+    renderTree();
+    try {
+        await apiFetch('/api/pages/reorder', { method: 'POST', body: JSON.stringify({ parentId: parentId || null, orderedIds }) });
+    } catch (e) { console.error('Reorder error:', e); }
+}
+// 新規ページの初期 sortOrder（同じ親の末尾）
+function nextSortOrder(parentId) { return getSiblingIds(parentId).length; }
+
 function renderTree() {
     if(!treeEl) return;
     treeEl.innerHTML = '';
+    // 兄弟は sortOrder 順に表示する（同値の場合は API 返却順＝作成順を保つ安定ソート）。
+    const sortSiblingIds = (ids) => [...ids].sort((a, b) => (state.pages[a]?.sortOrder ?? 0) - (state.pages[b]?.sortOrder ?? 0));
     const buildTree = (pageIds, container, level) => {
         pageIds.forEach(id => {
             const page = state.pages[id]; if (!page) return;
-            const children = Object.values(state.pages).filter(p => p.parentId === id).map(p => p.id);
+            const children = sortSiblingIds(Object.values(state.pages).filter(p => p.parentId === id).map(p => p.id));
             const item = document.createElement('div');
             item.className = `tree-item ${state.currentPageId === id ? 'active' : ''}`;
             item.style.paddingLeft = `${16 + level * 16}px`;
@@ -770,6 +794,50 @@ function renderTree() {
             title.textContent = titleText;
             
             item.append(toggle, title);
+            
+            // 並び替え：同じ親を持つ兄弟間でのドラッグ＆ドロップ（#3）。
+            // 親をまたぐ移動は対象外とし、ドロップ先が別親の場合は受け付けない。
+            item.draggable = true;
+            item.addEventListener('dragstart', (e) => {
+                draggedPageId = id;
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', id); } catch (_) {}
+                item.classList.add('dragging');
+            });
+            item.addEventListener('dragend', () => {
+                item.classList.remove('dragging');
+                document.querySelectorAll('.drop-before, .drop-after').forEach(el => el.classList.remove('drop-before', 'drop-after'));
+                draggedPageId = null;
+            });
+            item.addEventListener('dragover', (e) => {
+                if (!draggedPageId || draggedPageId === id) return;
+                const dragged = state.pages[draggedPageId];
+                if (!dragged || dragged.parentId !== page.parentId) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = item.getBoundingClientRect();
+                const after = (e.clientY - rect.top) > rect.height / 2;
+                item.classList.toggle('drop-after', after);
+                item.classList.toggle('drop-before', !after);
+            });
+            item.addEventListener('dragleave', () => item.classList.remove('drop-before', 'drop-after'));
+            item.addEventListener('drop', (e) => {
+                e.preventDefault();
+                item.classList.remove('drop-before', 'drop-after');
+                if (!draggedPageId || draggedPageId === id) return;
+                const dragged = state.pages[draggedPageId];
+                if (!dragged || dragged.parentId !== page.parentId) return;
+                const rect = item.getBoundingClientRect();
+                const after = (e.clientY - rect.top) > rect.height / 2;
+                const siblings = getSiblingIds(page.parentId);
+                const from = siblings.indexOf(draggedPageId);
+                let to = siblings.indexOf(id) + (after ? 1 : 0);
+                if (from < to) to--;
+                if (from < 0 || from === to) return;
+                siblings.splice(from, 1);
+                siblings.splice(to, 0, draggedPageId);
+                applySiblingOrder(page.parentId, siblings);
+            });
             
             item.onclick = (e) => {
                 if(e.target === toggle && children.length > 0) {
@@ -806,7 +874,7 @@ function renderTree() {
             container.appendChild(childContainer);
         });
     };
-    buildTree(state.rootPages, treeEl, 0);
+    buildTree(sortSiblingIds(state.rootPages), treeEl, 0);
     document.getElementById('btn-home').classList.toggle('active', state.currentPageId === 'home');
 }
 
@@ -819,6 +887,7 @@ document.getElementById('add-page-btn').addEventListener('click', async () => {
         id, 
         title: '', 
         parentId: null, 
+        sortOrder: nextSortOrder(null),
         blocks: [{ id: generateId(), type: 'p', content: '', children: [] }] 
     };
     state.pages[id] = newPage;
@@ -836,6 +905,7 @@ document.getElementById('ctx-add-subpage')?.addEventListener('click', async () =
         id: childId, 
         title: '', 
         parentId: contextMenuTargetId, 
+        sortOrder: nextSortOrder(contextMenuTargetId),
         blocks: [{ id: generateId(), type: 'p', content: '', children: [] }] 
     };
     state.pages[childId] = childPage;
@@ -845,6 +915,26 @@ document.getElementById('ctx-add-subpage')?.addEventListener('click', async () =
     renderTree(); 
     openPage(childId); 
     setTimeout(() => pageTitleEl?.focus(), 10);
+});
+
+document.getElementById('ctx-move-up')?.addEventListener('click', () => {
+    contextMenuEl?.classList.add('hidden');
+    const page = state.pages[contextMenuTargetId]; if (!page) return;
+    const siblings = getSiblingIds(page.parentId);
+    const idx = siblings.indexOf(contextMenuTargetId);
+    if (idx <= 0) return;
+    [siblings[idx - 1], siblings[idx]] = [siblings[idx], siblings[idx - 1]];
+    applySiblingOrder(page.parentId, siblings);
+});
+
+document.getElementById('ctx-move-down')?.addEventListener('click', () => {
+    contextMenuEl?.classList.add('hidden');
+    const page = state.pages[contextMenuTargetId]; if (!page) return;
+    const siblings = getSiblingIds(page.parentId);
+    const idx = siblings.indexOf(contextMenuTargetId);
+    if (idx < 0 || idx >= siblings.length - 1) return;
+    [siblings[idx], siblings[idx + 1]] = [siblings[idx + 1], siblings[idx]];
+    applySiblingOrder(page.parentId, siblings);
 });
 
 document.getElementById('ctx-delete-page')?.addEventListener('click', () => {

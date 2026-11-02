@@ -44,12 +44,25 @@ async function apiFetch(endpoint, options = {}) {
         const err = new Error(errData.error || `HTTPエラー: ${res.status}`);
         err.status = res.status;
         if (errData.currentUpdatedAt) err.currentUpdatedAt = errData.currentUpdatedAt;
+        // セッション切れ（R2-1）：JWT は 7日で失効するが、従来は 401 を放置して
+        // 保存が毎回「保存に失敗しました」になるだけだった。認証系エンドポイント自体の
+        // 401（ログイン失敗）は除き、トークンを破棄してログイン画面を出す。
+        if (res.status === 401 && !endpoint.startsWith('/api/auth/') && !sessionExpiredShown) {
+            sessionExpiredShown = true;
+            currentUser = null;
+            localStorage.removeItem('motion_token');
+            localStorage.removeItem('motion_user');
+            showAuthModal();
+        }
         throw err;
     }
     // DELETEなどレスポンスが空の場合の考慮
     const text = await res.text();
     return text ? JSON.parse(text) : {};
 }
+
+// セッション切れの再ログイン導線を二重表示しないためのフラグ（ログイン成功時は reload でリセットされる）
+let sessionExpiredShown = false;
 
 // 設定を保存するヘルパー関数
 async function savePrefs(key, value) {
@@ -574,6 +587,10 @@ async function saveDataToApi(pageTarget) {
         if (saved && saved.updated_at) page.updatedAt = saved.updated_at;
         setStatus('保存済み', false);
     } catch (e) {
+        // セッション切れ（R2-1）：apiFetch 側でログイン画面を出しているため、状態表示もそれに合わせる
+        if (e.status === 401) {
+            setStatus('セッションが切れました。再ログインしてください', true);
+        }
         // 楽観ロックの競合 (#5)：上書きせず中断し、警告表示だけにする。
         // 再読込するまでは同じ expectedUpdatedAt で再び 409 になるため、ローカル編集は保持される
         if (e.status === 409 || (e.message && e.message.includes('競合'))) {

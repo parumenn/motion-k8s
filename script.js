@@ -849,32 +849,114 @@ document.getElementById('ctx-add-subpage')?.addEventListener('click', async () =
 
 document.getElementById('ctx-delete-page')?.addEventListener('click', () => {
     contextMenuEl?.classList.add('hidden');
-    if(confirm("このページと中のコンテンツを全て削除しますか？")) {
-        const deleteRecursive = async (id) => {
-            const children = Object.values(state.pages).filter(p => p.parentId === id);
-            for (const child of children) {
-                await deleteRecursive(child.id);
-            }
-            const page = state.pages[id];
-            if (page) {
-                try {
-                    await apiFetch(`/api/pages/${page.id}`, { method: 'DELETE' });
-                } catch (err) {
-                    console.error('Server delete error:', err);
-                }
-            }
-            delete state.pages[id]; 
-            state.rootPages = state.rootPages.filter(rid => rid !== id);
-            state.expandedNodes = state.expandedNodes.filter(rid => rid !== id);
-            state.recentPages = state.recentPages.filter(rid => rid !== id);
-        };
+    if(confirm("このページをゴミ箱に移動しますか？（サブページも一緒に移動します。ゴミ箱から復元できます）")) {
         (async () => {
-            await deleteRecursive(contextMenuTargetId);
-            await saveData(); 
-            if(state.currentPageId === contextMenuTargetId) openPage('home');
+            // 子孫はサーバー側でまとめてゴミ箱へ移動するので、DELETE は1回だけ送る
+            try {
+                await apiFetch(`/api/pages/${contextMenuTargetId}`, { method: 'DELETE' });
+            } catch (err) {
+                console.error('Server delete error:', err);
+            }
+            // フロント側では対象サブツリー全体を state から除去する
+            const collectSubtree = (id, acc) => {
+                acc.push(id);
+                Object.values(state.pages).filter(p => p.parentId === id).forEach(child => collectSubtree(child.id, acc));
+                return acc;
+            };
+            const removedIds = collectSubtree(contextMenuTargetId, []);
+            const wasCurrentOpen = removedIds.includes(state.currentPageId);
+            removedIds.forEach(id => {
+                delete state.pages[id];
+                state.rootPages = state.rootPages.filter(rid => rid !== id);
+                state.expandedNodes = state.expandedNodes.filter(rid => rid !== id);
+                state.recentPages = state.recentPages.filter(rid => rid !== id);
+            });
+            await saveData();
+            if(wasCurrentOpen) openPage('home');
             else renderTree();
         })();
     }
+});
+
+// ================= ゴミ箱 =================
+
+async function openTrashModal() {
+    const overlay = document.getElementById('trash-overlay');
+    const listEl = document.getElementById('trash-list');
+    if (!overlay || !listEl) return;
+    overlay.classList.remove('hidden');
+    listEl.innerHTML = '<div class="trash-empty">読み込み中…</div>';
+    try {
+        const pages = await apiFetch('/api/pages?includeDeleted=true');
+        const trashed = pages.filter(p => p.deleted_at);
+        // 削除日時の新しい順に表示
+        trashed.sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at));
+        renderTrashList(trashed);
+    } catch (e) {
+        console.error('Trash load error:', e);
+        listEl.innerHTML = '<div class="trash-empty">ゴミ箱の読み込みに失敗しました</div>';
+    }
+}
+
+function renderTrashList(trashed) {
+    const listEl = document.getElementById('trash-list');
+    if (!listEl) return;
+    if (trashed.length === 0) {
+        listEl.innerHTML = '<div class="trash-empty">ゴミ箱は空です</div>';
+        return;
+    }
+    listEl.innerHTML = '';
+    trashed.forEach(page => {
+        const row = document.createElement('div');
+        row.className = 'trash-row';
+        const deletedDate = page.deleted_at ? new Date(page.deleted_at).toLocaleString('ja-JP') : '';
+        const info = document.createElement('div');
+        info.className = 'trash-info';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'trash-title';
+        titleEl.textContent = page.title || '無題';
+        const dateEl = document.createElement('div');
+        dateEl.className = 'trash-date';
+        dateEl.textContent = `削除: ${deletedDate}`;
+        info.appendChild(titleEl);
+        info.appendChild(dateEl);
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'trash-restore-btn';
+        restoreBtn.textContent = '復元';
+        restoreBtn.addEventListener('click', async () => {
+            try {
+                await apiFetch(`/api/pages/${page.id}/restore`, { method: 'POST' });
+                await loadDataFromApi();
+                renderTree();
+                openTrashModal();
+            } catch (e) {
+                console.error('Restore error:', e);
+                alert('復元に失敗しました');
+            }
+        });
+        const permanentBtn = document.createElement('button');
+        permanentBtn.className = 'trash-permanent-btn';
+        permanentBtn.textContent = '完全に削除';
+        permanentBtn.addEventListener('click', async () => {
+            if(!confirm("このページを完全に削除しますか？この操作は元に戻せません。")) return;
+            try {
+                await apiFetch(`/api/pages/${page.id}/permanent`, { method: 'DELETE' });
+                openTrashModal();
+            } catch (e) {
+                console.error('Permanent delete error:', e);
+                alert('完全削除に失敗しました');
+            }
+        });
+        row.appendChild(info);
+        row.appendChild(restoreBtn);
+        row.appendChild(permanentBtn);
+        listEl.appendChild(row);
+    });
+}
+
+document.getElementById('trash-btn')?.addEventListener('click', openTrashModal);
+document.getElementById('trash-close-btn')?.addEventListener('click', () => {
+    document.getElementById('trash-overlay')?.classList.add('hidden');
 });
 document.addEventListener('click', (e) => { if (!e.target.closest('#context-menu')) contextMenuEl?.classList.add('hidden'); });
 
@@ -1079,7 +1161,7 @@ pageTitleEl.addEventListener('keydown', (e) => {
     }
 });
 
-const overlayIds = ['overlay', 'search-overlay', 'link-overlay', 'ext-link-overlay', 'settings-overlay'];
+const overlayIds = ['overlay', 'search-overlay', 'link-overlay', 'ext-link-overlay', 'settings-overlay', 'trash-overlay'];
 overlayIds.forEach(id => {
     document.getElementById(id)?.addEventListener('click', e => {
         if (e.target.id === id) {

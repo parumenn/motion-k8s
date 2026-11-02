@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     
-    <link rel="stylesheet" href="styles.css?v=20261103a">
+    <link rel="stylesheet" href="styles.css?v=20261103b">
 </head>
 <body>
 
@@ -83,6 +83,7 @@
         <div class="tree-container" id="tree"></div>
         <div class="sidebar-footer">
             <button id="add-page-btn">+ 新規ページ</button>
+            <button id="trash-btn" title="ゴミ箱">🗑 ゴミ箱</button>
             <button id="settings-btn" title="設定"><svg class="icon"><use href="#icon-settings"></use></svg></button>
         </div>
     </nav>
@@ -197,6 +198,7 @@
     </div>
 </div>    
     <div id="search-overlay" class="hidden"><div class="modal search-modal"><input type="text" id="search-input" placeholder="タイトルや内容を検索 (Escで閉じる)"><div id="search-results" class="search-results"></div></div></div>
+    <div id="trash-overlay" class="hidden"><div class="modal trash-modal"><h2>🗑 ゴミ箱</h2><div id="trash-list" class="trash-list"></div><button id="trash-close-btn">閉じる</button></div></div>
     
     <div id="link-overlay" class="hidden"><div class="modal"><h3>ページへリンク</h3><select id="link-select"></select><button id="link-submit" class="primary-btn">挿入</button><button id="link-cancel" class="cancel-btn">キャンセル</button></div></div>
     
@@ -332,6 +334,6 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103a"></script>
+    <script src="script.js?v=20261103b"></script>
 </body>
 </html>

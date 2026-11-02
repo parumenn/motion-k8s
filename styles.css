@@ -512,16 +512,31 @@ body.dark-mode .block-wrapper:hover > .block-main {
     border-left: 1px solid var(--border);
 }
 
+/* Block operations (#11): the drag handle used to appear only on hover, so on
+   touch devices its existence was invisible and the block menu was unreachable.
+   Show it faintly at all times on touch devices, widen the tap target to 32px,
+   and also show it when the block has keyboard focus. */
 .drag-handle {
-    width: 24px;
+    flex: none;
+    width: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: var(--text-muted);
     cursor: grab;
     opacity: 0;
     transition: opacity 0.2s ease;
+    touch-action: none;
 }
 
-.block-main:hover .drag-handle {
+.block-main:hover .drag-handle,
+.block-main:focus-within .drag-handle {
     opacity: 1;
+}
+
+@media (hover: none) {
+    .drag-handle { opacity: 0.65; }
 }
 
 .block-content {

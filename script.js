@@ -649,6 +649,38 @@ function applyTheme() {
 // 対象範囲（#14）：「開いているページのブロック配列」のスナップショットだけが対象。
 // タイトルの編集・ページの作成/削除/移動/並び替え・ゴミ箱操作は Undo/Redo の対象外。
 // ブロックの構成変更（追加・削除・移動・ドラッグ等）時にスナップショットを積む。
+// Undo 履歴の永続化（R2-4）：メモリのみだった履歴を localStorage に保存し、
+// リロード後も Undo/Redo が使えるようにする。保存失敗時（容量超過等）は諦めてメモリのみで継続。
+const UNDO_STORAGE_KEY = 'motion_undo_history';
+function saveUndoHistory(pageId) {
+    try {
+        const stack = historyStack[pageId];
+        if (!stack || stack.length === 0) return;
+        let all = {};
+        try { all = JSON.parse(localStorage.getItem(UNDO_STORAGE_KEY) || '{}'); } catch (e) { all = {}; }
+        // 削除済みページの履歴を掃除
+        Object.keys(all).forEach(id => { if (!state.pages[id]) delete all[id]; });
+        all[pageId] = { stack: stack, index: historyIndex[pageId] };
+        try {
+            localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify(all));
+        } catch (e) {
+            // 容量超過時は当該ページ分だけ残して再試行し、それでもダメなら諦める
+            try { localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify({ [pageId]: all[pageId] })); } catch (e2) {}
+        }
+    } catch (e) { /* 永続化失敗は Undo 動作自体を壊さない */ }
+}
+function restoreUndoHistory(pageId) {
+    try {
+        const all = JSON.parse(localStorage.getItem(UNDO_STORAGE_KEY) || '{}');
+        const entry = all[pageId];
+        if (!entry || !Array.isArray(entry.stack) || entry.stack.length === 0) return false;
+        if (!Number.isInteger(entry.index) || entry.index < 0 || entry.index >= entry.stack.length) return false;
+        if (!entry.stack.every(s => Array.isArray(s))) return false;
+        historyStack[pageId] = entry.stack;
+        historyIndex[pageId] = entry.index;
+        return true;
+    } catch (e) { return false; }
+}
 function pushHistory(pageId) {
     if (!historyStack[pageId]) { historyStack[pageId] = []; historyIndex[pageId] = -1; }
     const currentBlocks = clone(state.pages[pageId].blocks);
@@ -662,6 +694,7 @@ function pushHistory(pageId) {
     if(historyStack[pageId].length > 50) historyStack[pageId].shift();
     else historyIndex[pageId]++;
     updateUndoButtons();
+    saveUndoHistory(pageId);
 }
 // ロック未解除のページではエディタにブロックが表示されないため、
 // 空のエディタ内容をスナップショットして既存内容を壊さないよう Undo/Redo を抑止する。
@@ -683,7 +716,7 @@ function executeUndo(pageId) {
     if (historyIndex[pageId] <= 0) return;
     historyIndex[pageId]--;
     state.pages[pageId].blocks = clone(historyStack[pageId][historyIndex[pageId]]);
-    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons();
+    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons(); saveUndoHistory(pageId);
 }
 function executeRedo(pageId) {
     if (!historyStack[pageId] || historyStack[pageId].length === 0) return;
@@ -693,7 +726,7 @@ function executeRedo(pageId) {
     if (historyIndex[pageId] >= historyStack[pageId].length - 1) return;
     historyIndex[pageId]++;
     state.pages[pageId].blocks = clone(historyStack[pageId][historyIndex[pageId]]);
-    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons();
+    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons(); saveUndoHistory(pageId);
 }
 // ページヘッダの Undo/Redo ボタンの有効・無効を履歴状態に合わせて更新する。
 function updateUndoButtons() {
@@ -1356,7 +1389,7 @@ async function openPage(id, isHistoryBack = false) {
     if (page.isLocked) { lockBtn.classList.add('locked'); document.getElementById('lock-text').textContent = 'ロックを解除'; }
     else { lockBtn.classList.remove('locked'); document.getElementById('lock-text').textContent = 'ロック'; }
     
-    if(!historyStack[id]) pushHistory(id);
+    if(!historyStack[id] && !restoreUndoHistory(id)) pushHistory(id);
     renderEditor(page);
     updateUndoButtons();
     if (window.innerWidth <= 1024) { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }

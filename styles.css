@@ -1849,6 +1849,30 @@ body.dark-mode .selected-block > .block-main {
     color: var(--text-muted);
 }
 
+.trash-notice {
+    padding: 8px 0 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.trash-purge-btn {
+    margin-bottom: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.trash-expiring .trash-date {
+    color: #d64545;
+    font-weight: bold;
+}
+
 .trash-restore-btn,
 .trash-permanent-btn {
     padding: 6px 10px;

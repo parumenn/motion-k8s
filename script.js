@@ -1201,15 +1201,48 @@ async function openTrashModal() {
 function renderTrashList(trashed) {
     const listEl = document.getElementById('trash-list');
     if (!listEl) return;
+    // R2-6: ゴミ箱の有効期限（削除から30日で自動完全削除）の通知と手動パージ。
+    const notice = document.createElement('div');
+    notice.className = 'trash-notice';
+    notice.textContent = 'ゴミ箱のページは削除から30日後に自動で完全削除されます。残しておきたいページは期限までに復元してください。';
     if (trashed.length === 0) {
-        listEl.innerHTML = '<div class="trash-empty">ゴミ箱は空です</div>';
+        listEl.innerHTML = '';
+        listEl.appendChild(notice);
+        const empty = document.createElement('div');
+        empty.className = 'trash-empty';
+        empty.textContent = 'ゴミ箱は空です';
+        listEl.appendChild(empty);
         return;
     }
     listEl.innerHTML = '';
+    listEl.appendChild(notice);
+    const purgeBtn = document.createElement('button');
+    purgeBtn.className = 'trash-purge-btn';
+    purgeBtn.textContent = '期限切れ（30日経過）を今すぐ削除';
+    purgeBtn.addEventListener('click', async () => {
+        if(!confirm("削除から30日を経過したゴミ箱ページをすべて完全に削除しますか？この操作は元に戻せません。")) return;
+        try {
+            const result = await apiFetch('/api/pages/trash/purge', { method: 'POST' });
+            alert(`${result.purged}件の期限切れページを削除しました`);
+            openTrashModal();
+        } catch (e) {
+            console.error('Trash purge error:', e);
+            alert('期限切れページの削除に失敗しました');
+        }
+    });
+    listEl.appendChild(purgeBtn);
     trashed.forEach(page => {
         const row = document.createElement('div');
         row.className = 'trash-row';
         const deletedDate = page.deleted_at ? new Date(page.deleted_at).toLocaleString('ja-JP') : '';
+        // 有効期限：削除日時＋30日。残り7日以内は警告表示。
+        const deletedAt = page.deleted_at ? new Date(page.deleted_at) : null;
+        const expiryAt = deletedAt ? new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000) : null;
+        const daysLeft = expiryAt ? Math.ceil((expiryAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+        if (daysLeft !== null && daysLeft <= 7) row.classList.add('trash-expiring');
+        const expiryText = expiryAt
+            ? (daysLeft <= 0 ? '期限切れ（次回定期実行で自動削除されます）' : `自動削除: ${expiryAt.toLocaleString('ja-JP')}（あと${daysLeft}日）`)
+            : '';
         const info = document.createElement('div');
         info.className = 'trash-info';
         const titleEl = document.createElement('div');
@@ -1217,7 +1250,7 @@ function renderTrashList(trashed) {
         titleEl.textContent = page.title || '無題';
         const dateEl = document.createElement('div');
         dateEl.className = 'trash-date';
-        dateEl.textContent = `削除: ${deletedDate}`;
+        dateEl.textContent = `削除: ${deletedDate} ／ ${expiryText}`;
         info.appendChild(titleEl);
         info.appendChild(dateEl);
         const restoreBtn = document.createElement('button');

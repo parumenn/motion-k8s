@@ -866,6 +866,10 @@ function expandAncestors(pageId) {
 
 function renderTree() {
     if(!treeEl) return;
+    // ツリーのスクロール位置を保持する（R2-3）：再描画で innerHTML を作り直すと
+    // スクロールが先頭に戻ってしまうため、描画後に復元する。
+    const treeScroller = document.querySelector('.tree-container');
+    const prevScrollTop = treeScroller ? treeScroller.scrollTop : 0;
     treeEl.innerHTML = '';
     // 現在ページの祖先集合（ハイライト用）。深い階層でも現在地の経路が分かる。
     const ancestorIds = new Set();
@@ -882,6 +886,7 @@ function renderTree() {
             const children = sortSiblingIds(Object.values(state.pages).filter(p => p.parentId === id).map(p => p.id));
             const item = document.createElement('div');
             item.className = `tree-item ${state.currentPageId === id ? 'active' : ''} ${ancestorIds.has(id) ? 'ancestor' : ''}`;
+            item.dataset.pageId = id;
             item.style.paddingLeft = `${16 + level * 16}px`;
             
             const lockedBy = isPageLocked(id);
@@ -1021,6 +1026,20 @@ function renderTree() {
     };
     buildTree(sortSiblingIds(state.rootPages), treeEl, 0);
     document.getElementById('btn-home').classList.toggle('active', state.currentPageId === 'home');
+    if (treeScroller) treeScroller.scrollTop = prevScrollTop;
+}
+
+// タイトル入力時のツリー更新（R2-3）：毎キーストロークの renderTree() 全再描画をやめ、
+// 該当ノードのタイトル表示だけを更新する（スクロール位置・展開状態・ドラッグ状態に影響しない）。
+function updateTreeTitle(pageId) {
+    const titleEl = treeEl?.querySelector(`.tree-item[data-page-id="${pageId}"] .tree-title`);
+    if (!titleEl) return;
+    const page = state.pages[pageId];
+    if (!page) return;
+    let titleText = page.title || '無題';
+    if (page.isLocked) titleText = `${page.isUnlockedSession ? '🔓' : '🔒'} ${titleText}`;
+    titleEl.textContent = titleText;
+    titleEl.title = page.title || '無題';
 }
 
 document.getElementById('sidebar-toggle-btn').addEventListener('click', () => { sidebar.classList.add('open'); sidebarOverlay.classList.add('active'); });
@@ -1383,7 +1402,7 @@ pageTitleEl.addEventListener('input', (e) => {
     state.pages[state.currentPageId].title = val; 
     document.getElementById('mobile-topbar-title').textContent = val || '無題';
     document.title = `${val || '無題'} - Motion`; // ★追加：ブラウザのタブ名も同期
-    renderTree(); 
+    updateTreeTitle(state.currentPageId);
     updateBreadcrumb(state.currentPageId);
     document.querySelectorAll(`.block-content[data-link-id="${state.currentPageId}"]`).forEach(el => el.innerHTML = `📄 ${val || '無題'}`);
 

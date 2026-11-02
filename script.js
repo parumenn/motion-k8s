@@ -1276,6 +1276,9 @@ async function openPage(id, isHistoryBack = false) {
     // まだ読み込まれていない場合のみローディングUIを出す
     if (page.blocks === null) {
         document.getElementById('editor-wrapper').classList.add('hidden');
+        // ローディング表示（#16）：開くページのタイトルを先に表示し、取得完了まで何を開いているか分かるようにする
+        document.getElementById('inline-loading-title').textContent = page.title || '無題';
+        document.getElementById('mobile-topbar-title').textContent = page.title || '無題';
         document.getElementById('inline-loading').classList.remove('hidden');
         
         if (page.id) {

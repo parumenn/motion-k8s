@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     
-    <link rel="stylesheet" href="styles.css?v=20261103k">
+    <link rel="stylesheet" href="styles.css?v=20261103l">
 </head>
 <body>
     <script>try { if (localStorage.getItem('local_workspace_theme') === 'dark') document.body.classList.add('dark-mode'); } catch (e) {}</script>
@@ -104,9 +104,15 @@
             </div>
         </div>
 
-        <div id="inline-loading" class="hidden" style="display: flex; align-items: center; justify-content: center; padding: 20px; color: var(--text-muted); font-size: 14px; gap: 8px;">
-            <svg class="icon spinner" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M12 2v4c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8H2c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"/></svg>
-            読み込み中...
+        <div id="inline-loading" class="hidden" role="status">
+            <div id="inline-loading-title" class="inline-loading-title"></div>
+            <div class="inline-loading-row">
+                <svg class="icon spinner" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M12 2v4c4.41 0 8 3.59 8 8s-3.59 8-8 8-8-3.59-8-8H2c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2z"/></svg>
+                読み込み中...
+            </div>
+            <div class="skeleton-line" style="width: 92%"></div>
+            <div class="skeleton-line" style="width: 78%"></div>
+            <div class="skeleton-line" style="width: 64%"></div>
         </div>
 
         <div class="editor-wrapper" id="editor-wrapper" class="hidden">
@@ -339,6 +345,6 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103j"></script>
+    <script src="script.js?v=20261103l"></script>
 </body>
 </html>

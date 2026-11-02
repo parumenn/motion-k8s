@@ -615,6 +615,8 @@ async function createPageInApi(page) {
         const created = await apiFetch('/api/pages', { method: 'POST', body: JSON.stringify(payload) });
         // 楽観ロック (#5)：新規作成直後の updated_at を保持し、次回保存から競合検出が働くようにする
         if (created && created.updated_at) page.updatedAt = created.updated_at;
+        // R2-9：新規作成直後の revision も保持する
+        if (created && typeof created.revision === 'number') page.revision = created.revision;
     } catch (e) {
         console.error('Create page error:', e);
     }
@@ -640,11 +642,15 @@ async function saveDataToApi(pageTarget) {
             isLocked: page.isLocked || false,
             passwordHash: page.password || null,
             // 楽観ロック (#5)：読込時の updated_at を送る。未取得の場合は送らず従来動作
-            expectedUpdatedAt: page.updatedAt || undefined
+            expectedUpdatedAt: page.updatedAt || undefined,
+            // R2-9：revision が取得できている場合はそちらを優先する（整数比較で同一ミリ秒問題なし）。
+            // バックエンドは expectedRevision がある場合にそれで判定する
+            expectedRevision: (typeof page.revision === 'number' ? page.revision : undefined)
         };
         // K8sバックエンドはUPSERT(PUT)の動きをするよう作られています
         const saved = await apiFetch(`/api/pages/${page.id}`, { method: 'PUT', body: JSON.stringify(payload) });
         if (saved && saved.updated_at) page.updatedAt = saved.updated_at;
+        if (saved && typeof saved.revision === 'number') page.revision = saved.revision;
         setStatus('保存済み', false);
     } catch (e) {
         // セッション切れ（R2-1）：apiFetch 側でログイン画面を出しているため、状態表示もそれに合わせる
@@ -1469,6 +1475,8 @@ async function openPage(id, isHistoryBack = false) {
                 page.blocks = parsedBlocks;
                 // 楽観ロック (#5)：読込時点の updated_at を保持する
                 if (doc.updated_at) page.updatedAt = doc.updated_at;
+                // R2-9：読込時点の revision も保持し、次回保存から整数比較で競合検出する
+                if (typeof doc.revision === 'number') page.revision = doc.revision;
             } catch (err) {
                 console.error("Failed to load blocks:", err);
                 page.blocks = [{ id: generateId(), type: 'p', content: '読み込みエラーが発生しました。', children: [] }];
@@ -1527,6 +1535,8 @@ async function prefetchChildren(parentId) {
             page.blocks = parsedBlocks;
             // 楽観ロック (#5)：読込時点の updated_at を保持する
             if (doc.updated_at) page.updatedAt = doc.updated_at;
+            // R2-9：読込時点の revision も保持する
+            if (typeof doc.revision === 'number') page.revision = doc.revision;
         } catch(e) {
             console.warn('Prefetch failed for:', page.id, e);
         }

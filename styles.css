@@ -235,6 +235,11 @@ body {
     color: var(--text-main);
 }
 
+/* 深い階層の現在地 (#8)：現在ページの祖先はタイトルを太字にして経路を示す */
+.tree-item.ancestor .tree-title {
+    font-weight: 600;
+}
+
 /* 並び替え（#3）：ドラッグ中の項目とドロップ位置の表示 */
 .tree-item.dragging {
     opacity: 0.5;

@@ -792,9 +792,27 @@ async function applySiblingOrder(parentId, orderedIds) {
 // 新規ページの初期 sortOrder（同じ親の末尾）
 function nextSortOrder(parentId) { return getSiblingIds(parentId).length; }
 
+// 深い階層の現在地 (#8)：ページを開くとき、その祖先をすべて展開対象に入れる。
+// ロックされた祖先は renderTree 側で展開が抑止されるため、ロック中は子孫が
+// 見えないままになり、解除後の openPage 再呼出で初めて展開される（安全側の挙動）。
+function expandAncestors(pageId) {
+    let cur = state.pages[pageId]?.parentId;
+    while (cur) {
+        if (!state.expandedNodes.includes(cur)) state.expandedNodes.push(cur);
+        cur = state.pages[cur]?.parentId;
+    }
+}
+
 function renderTree() {
     if(!treeEl) return;
     treeEl.innerHTML = '';
+    // 現在ページの祖先集合（ハイライト用）。深い階層でも現在地の経路が分かる。
+    const ancestorIds = new Set();
+    let ancestorCur = state.pages[state.currentPageId]?.parentId;
+    while (ancestorCur) {
+        ancestorIds.add(ancestorCur);
+        ancestorCur = state.pages[ancestorCur]?.parentId;
+    }
     // 兄弟は sortOrder 順に表示する（同値の場合は API 返却順＝作成順を保つ安定ソート）。
     const sortSiblingIds = (ids) => [...ids].sort((a, b) => (state.pages[a]?.sortOrder ?? 0) - (state.pages[b]?.sortOrder ?? 0));
     const buildTree = (pageIds, container, level) => {
@@ -802,7 +820,7 @@ function renderTree() {
             const page = state.pages[id]; if (!page) return;
             const children = sortSiblingIds(Object.values(state.pages).filter(p => p.parentId === id).map(p => p.id));
             const item = document.createElement('div');
-            item.className = `tree-item ${state.currentPageId === id ? 'active' : ''}`;
+            item.className = `tree-item ${state.currentPageId === id ? 'active' : ''} ${ancestorIds.has(id) ? 'ancestor' : ''}`;
             item.style.paddingLeft = `${16 + level * 16}px`;
             
             const lockedBy = isPageLocked(id);
@@ -819,6 +837,8 @@ function renderTree() {
                 titleText = `${icon} ${titleText}`;
             }
             title.textContent = titleText;
+            // 深い階層の現在地 (#8)：長いタイトルは省略表示になるため、全文をツールチップで見せる
+            title.title = page.title || '無題';
 
             // モバイル導線 (#6)：右クリックできない環境でも同じメニューを開ける「…」ボタン。
             // ボタン自体の click はバブリングを止め、ページを開かないようにする。
@@ -1173,6 +1193,8 @@ document.getElementById('btn-home').addEventListener('click', () => openPage('ho
 
 
 async function openPage(id, isHistoryBack = false) {
+    // 深い階層の現在地 (#8)：開くページの祖先を自動展開し、ツリー上で現在地が見えるようにする
+    if (id !== 'home' && state.pages[id]) expandAncestors(id);
     if (id === 'home') {
         state.currentPageId = 'home';
         document.getElementById('editor-wrapper').classList.add('hidden');

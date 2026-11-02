@@ -2495,17 +2495,16 @@ function openSearchModal() {
         const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         return safe.replace(new RegExp(pattern, 'gi'), '<mark>$&</mark>');
     };
-    searchInput.oninput = (e) => {
-        const q = e.target.value.toLowerCase(); resultsEl.innerHTML = '';
-        if(!q) return;
-        
+    // ローカル検索（読み込み済みページ対象。即時表示用）
+    const renderResults = (q) => {
+        resultsEl.innerHTML = '';
         const includeLocked = localStorage.getItem('motion_search_locked') === 'true';
-        
+
         Object.values(state.pages).forEach(p => {
             if (!includeLocked && isPageLocked(p.id)) return;
-            
+
             let match = false; let snippet = '';
-            
+
             if ((p.title||'無題').toLowerCase().includes(q)) match = true;
             else {
                 const searchBlocks = (blocks) => {
@@ -2526,6 +2525,32 @@ function openSearchModal() {
                 resultsEl.appendChild(div);
             }
         });
+    };
+    let searchServerTimer = null;
+    searchInput.oninput = (e) => {
+        const q = e.target.value.toLowerCase(); resultsEl.innerHTML = '';
+        if(!q) return;
+        renderResults(q);
+        // サーバー検索（R2-2）：一覧 API は blocks を含まないため、未読込ページの本文は
+        // ローカル検索で拾えない。サーバー結果の blocks をキャッシュして再描画し、漏れを補う。
+        // 編集中の現行ページの blocks は上書きしない（未保存の編集を守る）。
+        clearTimeout(searchServerTimer);
+        searchServerTimer = setTimeout(async () => {
+            const currentQ = searchInput.value;
+            if (!currentQ || currentQ.toLowerCase() !== q) return;
+            try {
+                const rows = await apiFetch(`/api/pages/search?q=${encodeURIComponent(currentQ)}`);
+                let updated = false;
+                rows.forEach(r => {
+                    if (r.id === state.currentPageId) return;
+                    const p = state.pages[r.id];
+                    if (p && Array.isArray(r.blocks)) { p.blocks = r.blocks; updated = true; }
+                });
+                if (updated && searchInput.value.toLowerCase() === q) renderResults(q);
+            } catch (err) {
+                // サーバー検索に失敗した場合はローカル結果のままにする
+            }
+        }, 250);
     };
 }
 document.getElementById('settings-btn').addEventListener('click', () => document.getElementById('settings-overlay').classList.remove('hidden'));

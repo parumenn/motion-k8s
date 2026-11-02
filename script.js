@@ -41,7 +41,10 @@ async function apiFetch(endpoint, options = {}) {
     if (!res.ok) {
         let errData = {};
         try { errData = await res.json(); } catch(e) {}
-        throw new Error(errData.error || `HTTPエラー: ${res.status}`);
+        const err = new Error(errData.error || `HTTPエラー: ${res.status}`);
+        err.status = res.status;
+        if (errData.currentUpdatedAt) err.currentUpdatedAt = errData.currentUpdatedAt;
+        throw err;
     }
     // DELETEなどレスポンスが空の場合の考慮
     const text = await res.text();
@@ -536,7 +539,9 @@ async function createPageInApi(page) {
             isLocked: page.isLocked || false,
             passwordHash: page.password || null
         };
-        await apiFetch('/api/pages', { method: 'POST', body: JSON.stringify(payload) });
+        const created = await apiFetch('/api/pages', { method: 'POST', body: JSON.stringify(payload) });
+        // 楽観ロック (#5)：新規作成直後の updated_at を保持し、次回保存から競合検出が働くようにする
+        if (created && created.updated_at) page.updatedAt = created.updated_at;
     } catch (e) {
         console.error('Create page error:', e);
     }
@@ -560,14 +565,22 @@ async function saveDataToApi(pageTarget) {
             parentId: page.parentId || null,
             blocks: page.blocks || [],
             isLocked: page.isLocked || false,
-            passwordHash: page.password || null
+            passwordHash: page.password || null,
+            // 楽観ロック (#5)：読込時の updated_at を送る。未取得の場合は送らず従来動作
+            expectedUpdatedAt: page.updatedAt || undefined
         };
         // K8sバックエンドはUPSERT(PUT)の動きをするよう作られています
-        await apiFetch(`/api/pages/${page.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        const saved = await apiFetch(`/api/pages/${page.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        if (saved && saved.updated_at) page.updatedAt = saved.updated_at;
         setStatus('保存済み', false);
     } catch (e) {
+        // 楽観ロックの競合 (#5)：上書きせず中断し、警告表示だけにする。
+        // 再読込するまでは同じ expectedUpdatedAt で再び 409 になるため、ローカル編集は保持される
+        if (e.status === 409 || (e.message && e.message.includes('競合'))) {
+            console.warn('Save conflict:', e);
+            setStatus('競合：他端末で更新されました（保存していません）', true);
         // 新規作成が必要な場合のエラーハンドリング
-        if(e.message && e.message.includes('404')) {
+        } else if(e.message && e.message.includes('404')) {
             await createPageInApi(page);
             setStatus('保存済み', false);
         } else {
@@ -1159,6 +1172,8 @@ async function openPage(id, isHistoryBack = false) {
                     parsedBlocks = [{ id: generateId(), type: 'p', content: '', children: [] }];
                 }
                 page.blocks = parsedBlocks;
+                // 楽観ロック (#5)：読込時点の updated_at を保持する
+                if (doc.updated_at) page.updatedAt = doc.updated_at;
             } catch (err) {
                 console.error("Failed to load blocks:", err);
                 page.blocks = [{ id: generateId(), type: 'p', content: '読み込みエラーが発生しました。', children: [] }];
@@ -1214,6 +1229,8 @@ async function prefetchChildren(parentId) {
                 parsedBlocks = [{ id: generateId(), type: 'p', content: '', children: [] }];
             }
             page.blocks = parsedBlocks;
+            // 楽観ロック (#5)：読込時点の updated_at を保持する
+            if (doc.updated_at) page.updatedAt = doc.updated_at;
         } catch(e) {
             console.warn('Prefetch failed for:', page.id, e);
         }

@@ -1329,6 +1329,8 @@ pageTitleEl.addEventListener('input', (e) => {
 });
 
 pageTitleEl.addEventListener('keydown', (e) => {
+    // IME と Enter の競合 (#9)：変換確定の Enter ではフォーカス移動しない
+    if (e.isComposing) return;
     if (e.key === 'Enter') { 
         e.preventDefault(); 
         const firstBlock = document.querySelector('#editor .block-content'); 
@@ -1515,6 +1517,9 @@ function renderBlocks(blockArray, container) {
                         });
                         
                         td.addEventListener('keydown', (e) => {
+                            // IME と Enter の競合 (#9)：表セルは contentEditable のため、変換確定の
+                            // Enter が改行挿入やセル移動にならないよう変換中は処理しない
+                            if (e.isComposing) return;
                             if (['Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
                                 e.stopPropagation();
                             }
@@ -1678,6 +1683,8 @@ function renderBlocks(blockArray, container) {
 }
 
 function handleNonTextKeydown(e) {
+    // IME と Enter の競合 (#9)：変換中は一切のキー操作を横取りしない（防御的）
+    if (e.isComposing) return;
     const wrapper = e.target.closest('.block-wrapper');
     if (!wrapper) return;
     const contentEl = wrapper.querySelector('.block-content');
@@ -2524,18 +2531,24 @@ document.getElementById('editor-bottom-padding')?.addEventListener('click', () =
 });
 
 document.getElementById('modal-pass')?.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('modal-submit')?.click(); }
 });
 document.getElementById('ext-link-url')?.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('ext-link-submit')?.click(); }
 });
 document.getElementById('ext-link-title')?.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('ext-link-submit')?.click(); }
 });
 document.getElementById('link-select')?.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('link-submit')?.click(); }
 });
 document.getElementById('search-input')?.addEventListener('keydown', (e) => {
+    // IME と Enter の競合 (#9)：検索語の変換確定 Enter で先頭結果を開かない
+    if (e.isComposing) return;
     if (e.key === 'Enter') {
         e.preventDefault();
         const firstResult = document.querySelector('#search-results .search-item');

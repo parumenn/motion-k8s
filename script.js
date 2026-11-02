@@ -756,6 +756,20 @@ document.addEventListener('keydown', (e) => {
 const sidebar = document.getElementById('sidebar'), sidebarOverlay = document.getElementById('sidebar-overlay'), treeEl = document.getElementById('tree'), editorEl = document.getElementById('editor'), pageTitleEl = document.getElementById('page-title');
 let contextMenuTargetId = null;
 const contextMenuEl = document.getElementById('context-menu');
+// モバイル導線 (#6)：右クリックと同じメニューを、画面内に収まる位置で開く共通処理。
+// メニューは幅約 160px・高さ約 170px のため、はみ出す場合は左上へ寄せる。
+function openContextMenu(pageId, pageX, pageY) {
+    if (!contextMenuEl) return;
+    contextMenuTargetId = pageId;
+    const menuW = 170, menuH = 180;
+    const maxX = window.scrollX + window.innerWidth - menuW;
+    const maxY = window.scrollY + window.innerHeight - menuH;
+    contextMenuEl.style.left = `${Math.max(window.scrollX + 8, Math.min(pageX, maxX))}px`;
+    contextMenuEl.style.top = `${Math.max(window.scrollY + 8, Math.min(pageY, maxY))}px`;
+    contextMenuEl.classList.remove('hidden');
+}
+// 長押しでメニューを開いた直後に続く click でページが開かないようにするための抑止フラグ
+let suppressTreeClickId = null;
 
 // ---- ページ並び順（#3）用ヘルパー ----
 let draggedPageId = null;
@@ -805,8 +819,22 @@ function renderTree() {
                 titleText = `${icon} ${titleText}`;
             }
             title.textContent = titleText;
-            
-            item.append(toggle, title);
+
+            // モバイル導線 (#6)：右クリックできない環境でも同じメニューを開ける「…」ボタン。
+            // ボタン自体の click はバブリングを止め、ページを開かないようにする。
+            const menuBtn = document.createElement('button');
+            menuBtn.type = 'button';
+            menuBtn.className = 'tree-item-menu';
+            menuBtn.textContent = '⋮';
+            menuBtn.setAttribute('aria-label', 'ページメニュー');
+            menuBtn.title = 'ページメニュー';
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const rect = menuBtn.getBoundingClientRect();
+                openContextMenu(id, window.scrollX + rect.left, window.scrollY + rect.bottom);
+            });
+
+            item.append(toggle, title, menuBtn);
             
             // 並び替え：同じ親を持つ兄弟間でのドラッグ＆ドロップ（#3）。
             // 親をまたぐ移動は対象外とし、ドロップ先が別親の場合は受け付けない。
@@ -852,7 +880,30 @@ function renderTree() {
                 applySiblingOrder(page.parentId, siblings);
             });
             
+            // モバイル導線 (#6)：長押し（約600ms・ほぼ静止）でも同じメニューを開く。
+            // 移動したらキャンセルするのでスクロールと競合しない。長押し後に来る
+            // click は suppressTreeClickId で抑止し、ページを開かないようにする。
+            let longPressTimer = null, longPressX = 0, longPressY = 0;
+            const clearLongPress = () => { if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; } };
+            item.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                clearLongPress();
+                longPressX = e.touches[0].pageX; longPressY = e.touches[0].pageY;
+                longPressTimer = setTimeout(() => {
+                    longPressTimer = null;
+                    suppressTreeClickId = id;
+                    openContextMenu(id, longPressX, longPressY);
+                }, 600);
+            }, { passive: true });
+            item.addEventListener('touchmove', (e) => {
+                if (!longPressTimer || e.touches.length !== 1) return;
+                if (Math.abs(e.touches[0].pageX - longPressX) > 12 || Math.abs(e.touches[0].pageY - longPressY) > 12) clearLongPress();
+            }, { passive: true });
+            item.addEventListener('touchend', clearLongPress);
+            item.addEventListener('touchcancel', clearLongPress);
+
             item.onclick = (e) => {
+                if (suppressTreeClickId === id) { suppressTreeClickId = null; return; }
                 if(e.target === toggle && children.length > 0) {
                     const isHidden = childContainer.classList.contains('hidden');
                     if (isHidden) {
@@ -876,8 +927,8 @@ function renderTree() {
                 openPage(id);
             };
             item.oncontextmenu = (e) => {
-                e.preventDefault(); e.stopPropagation(); contextMenuTargetId = id;
-                contextMenuEl.style.top = `${e.pageY}px`; contextMenuEl.style.left = `${e.pageX}px`; contextMenuEl.classList.remove('hidden');
+                e.preventDefault(); e.stopPropagation();
+                openContextMenu(id, e.pageX, e.pageY);
             };
             container.appendChild(item);
 

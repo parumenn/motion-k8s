@@ -65,8 +65,65 @@ async function apiFetch(endpoint, options = {}) {
 let sessionExpiredShown = false;
 
 // 設定を保存するヘルパー関数
+// R2-8：ローカル保存に加え、サーバーへも送って他端末と同期する。
+// サーバーへの送信に失敗してもローカル設定は残るため、設定変更自体は壊れない。
 async function savePrefs(key, value) {
     localStorage.setItem(`motion_pref_${key}`, value);
+    try {
+        await apiFetch('/api/auth/prefs', {
+            method: 'PUT',
+            body: JSON.stringify({ prefs: collectLocalPrefs() })
+        });
+    } catch (e) { /* サーバー同期の失敗はローカル設定で継続 */ }
+}
+
+// savePrefs が扱うキーと、従来から使われているミラー先 localStorage キー
+const PREF_MIRROR_KEYS = {
+    theme: 'local_workspace_theme',
+    image_quality: 'motion_image_quality',
+    show_locked: 'motion_show_locked_in_home',
+    search_locked: 'motion_search_locked'
+};
+
+function collectLocalPrefs() {
+    const prefs = {};
+    Object.keys(PREF_MIRROR_KEYS).forEach(k => {
+        const v = localStorage.getItem(`motion_pref_${k}`);
+        if (v !== null) prefs[k] = v;
+    });
+    return prefs;
+}
+
+// R2-8：起動時にサーバー設定を取り込み、他端末での変更を反映する。
+// サーバーにあるキーはサーバー優先でローカルへ上書きし、テーマが変われば再適用する。
+// サーバーにないキーだけがローカルにある場合は、そのキーをサーバーへ送って収束させる。
+// 失敗時はローカル設定のままで継続し、初期化を壊さない。
+async function syncPrefsFromServer() {
+    try {
+        const res = await apiFetch('/api/auth/prefs');
+        const prefs = res.prefs;
+        if (!prefs || typeof prefs !== 'object') return;
+        let themeChanged = false;
+        Object.entries(PREF_MIRROR_KEYS).forEach(([key, mirror]) => {
+            if (typeof prefs[key] !== 'string') return;
+            if (localStorage.getItem(`motion_pref_${key}`) !== prefs[key]) {
+                localStorage.setItem(`motion_pref_${key}`, prefs[key]);
+                localStorage.setItem(mirror, prefs[key]);
+                if (key === 'theme') themeChanged = true;
+            }
+        });
+        if (themeChanged) applyTheme();
+        const local = collectLocalPrefs();
+        const missingOnServer = Object.keys(local).some(k => !(k in prefs));
+        if (missingOnServer) {
+            try {
+                await apiFetch('/api/auth/prefs', {
+                    method: 'PUT',
+                    body: JSON.stringify({ prefs: local })
+                });
+            } catch (e) { /* 初回移行の失敗は次回起動時に再試行される */ }
+        }
+    } catch (e) { /* 同期失敗時はローカル設定のままで継続 */ }
 }
 
 // ================= 複数ブロック選択・コピペ用の状態と補助関数 =================
@@ -285,6 +342,9 @@ async function initApp() {
             state.expandedNodes = parsedUi.expandedNodes || [];
             state.recentPages = parsedUi.recentPages || [];
         }
+
+        // R2-8：サーバー設定を同期してからデータを読み込む（失敗時はローカル設定のまま）
+        await syncPrefsFromServer();
 
         await loadDataFromApi();
 

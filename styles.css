@@ -1351,6 +1351,7 @@ body.dark-mode .selected-block > .block-main {
         left: -280px;
         top: 0;
         height: 100vh;
+        height: 100dvh;
         width: 260px;
         transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         z-index: 10001;
@@ -1488,6 +1489,12 @@ body.dark-mode .selected-block > .block-main {
         transition: top 0.05s ease-out;
     }
 
+    /* サイドバー表示中はモバイルツールバーを暗転オーバーレイの背面へ下げ、
+       フッターのボタンに被らないようにする（.active は全ての開閉経路で付け外しされる） */
+    #sidebar-overlay.active ~ #mobile-toolbar {
+        z-index: 9999 !important;
+    }
+
     #mobile-toolbar button {
         background: var(--bg-hover);
         border: none;
@@ -1579,9 +1586,6 @@ body.dark-mode .selected-block > .block-main {
     .sheet-item-title { font-weight: 600; font-size: 15px; }
     .sheet-item-desc { font-size: 12px; color: var(--text-muted); }
 
-    .sidebar-footer {
-        padding-bottom: 70px !important; 
-    }
 }
 
 @keyframes spin {

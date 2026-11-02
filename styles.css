@@ -1,4 +1,5 @@
 :root {
+    color-scheme: light;
     --bg-main: #ffffff;
     --bg-sidebar: #f7f7f5;
     --bg-hover: #efefed;
@@ -10,6 +11,7 @@
 }
 
 body.dark-mode {
+    color-scheme: dark;
     --bg-main: #22272e;
     --bg-sidebar: #1c2128;
     --bg-hover: #2d333b;
@@ -1010,6 +1012,11 @@ body.dark-mode .search-modal {
     color: inherit;
     padding: 0 1px;
     border-radius: 2px;
+}
+/* ダークモードでは明るい黄色ハイライトに薄文字が重なって読めないため、濃い琥珀色＋淡い黄文字にする */
+body.dark-mode .search-item mark {
+    background: #7c5f00;
+    color: #ffe9a3;
 }
 
 

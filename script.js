@@ -629,6 +629,9 @@ function applyTheme() {
 }
 
 // ================= Undo / Redo =================
+// 対象範囲（#14）：「開いているページのブロック配列」のスナップショットだけが対象。
+// タイトルの編集・ページの作成/削除/移動/並び替え・ゴミ箱操作は Undo/Redo の対象外。
+// ブロックの構成変更（追加・削除・移動・ドラッグ等）時にスナップショットを積む。
 function pushHistory(pageId) {
     if (!historyStack[pageId]) { historyStack[pageId] = []; historyIndex[pageId] = -1; }
     const currentBlocks = clone(state.pages[pageId].blocks);
@@ -641,19 +644,60 @@ function pushHistory(pageId) {
     historyStack[pageId].push(currentBlocks);
     if(historyStack[pageId].length > 50) historyStack[pageId].shift();
     else historyIndex[pageId]++;
+    updateUndoButtons();
+}
+// ロック未解除のページではエディタにブロックが表示されないため、
+// 空のエディタ内容をスナップショットして既存内容を壊さないよう Undo/Redo を抑止する。
+function isUndoBlocked(pageId) {
+    const lockedBy = isPageLocked(pageId);
+    return !!(lockedBy && !lockedBy.isUnlockedSession);
+}
+// 入力直後の未スナップショット状態でも Undo/Redo で入力内容が失われないよう、
+// 実行前に現在のエディタ内容を履歴に積む（Redo 未来はその時点で破棄される）。
+function snapshotCurrentBlocks(pageId) {
+    if (pageId !== state.currentPageId || !editorEl) return;
+    state.pages[pageId].blocks = extractBlocks(editorEl);
+    pushHistory(pageId);
 }
 function executeUndo(pageId) {
-    if (!historyStack[pageId] || historyIndex[pageId] <= 0) return;
+    if (!historyStack[pageId] || historyStack[pageId].length === 0) return;
+    if (isUndoBlocked(pageId)) return;
+    snapshotCurrentBlocks(pageId);
+    if (historyIndex[pageId] <= 0) return;
     historyIndex[pageId]--;
     state.pages[pageId].blocks = clone(historyStack[pageId][historyIndex[pageId]]);
-    renderEditor(state.pages[pageId]); saveData();
+    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons();
 }
 function executeRedo(pageId) {
-    if (!historyStack[pageId] || historyIndex[pageId] >= historyStack[pageId].length - 1) return;
+    if (!historyStack[pageId] || historyStack[pageId].length === 0) return;
+    if (isUndoBlocked(pageId)) return;
+    // Undo 後に編集していた場合は、その編集を新しい履歴として積み Redo 未来を破棄する。
+    snapshotCurrentBlocks(pageId);
+    if (historyIndex[pageId] >= historyStack[pageId].length - 1) return;
     historyIndex[pageId]++;
     state.pages[pageId].blocks = clone(historyStack[pageId][historyIndex[pageId]]);
-    renderEditor(state.pages[pageId]); saveData();
+    renderEditor(state.pages[pageId]); saveData(); updateUndoButtons();
 }
+// ページヘッダの Undo/Redo ボタンの有効・無効を履歴状態に合わせて更新する。
+function updateUndoButtons() {
+    const undoBtn = document.getElementById('undo-btn');
+    const redoBtn = document.getElementById('redo-btn');
+    if (!undoBtn || !redoBtn) return;
+    const pageId = state.currentPageId;
+    const stack = pageId ? historyStack[pageId] : null;
+    let canUndo = false, canRedo = false;
+    if (stack && stack.length > 0 && state.pages[pageId] && !isUndoBlocked(pageId)) {
+        const idx = historyIndex[pageId];
+        const current = JSON.stringify(state.pages[pageId].blocks);
+        const atSnapshot = current === JSON.stringify(stack[idx]);
+        canUndo = idx > 0 || !atSnapshot;
+        canRedo = idx < stack.length - 1 && atSnapshot;
+    }
+    undoBtn.disabled = !canUndo;
+    redoBtn.disabled = !canRedo;
+}
+document.getElementById('undo-btn')?.addEventListener('click', () => { if (state.currentPageId) executeUndo(state.currentPageId); });
+document.getElementById('redo-btn')?.addEventListener('click', () => { if (state.currentPageId) executeRedo(state.currentPageId); });
 
 document.addEventListener('keydown', (e) => {
     if (selectedBlocks.size > 0 && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1275,6 +1319,7 @@ async function openPage(id, isHistoryBack = false) {
     
     if(!historyStack[id]) pushHistory(id);
     renderEditor(page);
+    updateUndoButtons();
     if (window.innerWidth <= 1024) { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('active'); }
 
     prefetchChildren(id);
@@ -1814,6 +1859,7 @@ function saveEditorState(isStructuralChange = false) {
     const executeSave = async () => {
         page.blocks = extractBlocks(editorEl);
         if(isStructuralChange) pushHistory(state.currentPageId);
+        updateUndoButtons();
         await saveData();
     };
     if (isStructuralChange) { clearTimeout(saveDebounceTimer); executeSave(); }

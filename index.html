@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     
-    <link rel="stylesheet" href="styles.css?v=20261103i">
+    <link rel="stylesheet" href="styles.css?v=20261103j">
 </head>
 <body>
 
@@ -113,6 +113,8 @@
             <div class="page-header">
                 <div id="page-title" class="page-title-input" contenteditable="true" data-placeholder="無題" spellcheck="false"></div>
                 <span id="save-status" class="save-status" aria-live="polite"></span>
+                <button class="undo-btn" id="undo-btn" type="button" title="ブロックの変更を元に戻す（タイトル・ページ操作は対象外）" aria-label="元に戻す" disabled>↩</button>
+                <button class="undo-btn" id="redo-btn" type="button" title="ブロックの変更をやり直す（タイトル・ページ操作は対象外）" aria-label="やり直し" disabled>↪</button>
                 <button class="lock-btn" id="lock-btn">
                     <svg class="icon"><use href="#icon-lock"></use></svg><span id="lock-text">ロック</span>
                 </button>
@@ -336,6 +338,6 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103i"></script>
+    <script src="script.js?v=20261103j"></script>
 </body>
 </html>

@@ -1005,6 +1005,13 @@ body.dark-mode .search-modal {
     background: var(--bg-hover);
 }
 
+.search-item mark {
+    background: #fff3a3;
+    color: inherit;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+
 
 /* ================= スラッシュメニュー・コンテキストメニュー ================= */
 

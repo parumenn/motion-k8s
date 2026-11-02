@@ -2422,6 +2422,13 @@ function openSearchModal() {
     const searchOverlay = document.getElementById('search-overlay'), searchInput = document.getElementById('search-input'), resultsEl = document.getElementById('search-results');
     searchOverlay.classList.remove('hidden'); searchInput.value = ''; resultsEl.innerHTML = ''; searchInput.focus();
     
+    const escapeHtml = (t) => t.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const highlightMatch = (text, query) => {
+        const safe = escapeHtml(text);
+        if (!query) return safe;
+        const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return safe.replace(new RegExp(pattern, 'gi'), '<mark>$&</mark>');
+    };
     searchInput.oninput = (e) => {
         const q = e.target.value.toLowerCase(); resultsEl.innerHTML = '';
         if(!q) return;
@@ -2448,7 +2455,7 @@ function openSearchModal() {
             }
             if(match) {
                 const div = document.createElement('div'); div.className = 'search-item';
-                div.innerHTML = `<strong>${p.title||'無題'}</strong><br><span style="font-size:12px;color:var(--text-muted);">${snippet}</span>`;
+                div.innerHTML = `<strong>${highlightMatch(p.title||'無題', q)}</strong><br><span style="font-size:12px;color:var(--text-muted);">${highlightMatch(snippet, q)}</span>`;
                 div.onclick = () => { searchOverlay.classList.add('hidden'); openPage(p.id); };
                 resultsEl.appendChild(div);
             }

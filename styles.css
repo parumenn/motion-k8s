@@ -553,7 +553,16 @@ body.dark-mode .block-wrapper:hover > .block-main {
 
 .block-content:focus[data-placeholder]:empty::before {
     content: attr(data-placeholder);
-    color: var(--border);
+    color: var(--text-muted);
+    position: absolute;
+    pointer-events: none;
+}
+
+/* スラッシュメニューの発見性（#17）：ブロックが1つだけの空ページでは、フォーカス前から
+   ヒント（'/' または MarkDown記法）を表示する。入力が始まると :empty が外れて消える。 */
+#editor .block-wrapper:only-child .block-content[data-placeholder]:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
     position: absolute;
     pointer-events: none;
 }

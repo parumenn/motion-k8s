@@ -546,6 +546,13 @@ async function saveDataToApi(pageTarget) {
     const page = pageTarget || state.pages[state.currentPageId];
     if (!page || page.id === 'home') return;
 
+    const statusEl = document.getElementById('save-status');
+    const setStatus = (text, isError) => {
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        statusEl.classList.toggle('error', !!isError);
+    };
+    setStatus('保存中…', false);
     try {
         const payload = {
             title: page.title || '',
@@ -556,12 +563,15 @@ async function saveDataToApi(pageTarget) {
         };
         // K8sバックエンドはUPSERT(PUT)の動きをするよう作られています
         await apiFetch(`/api/pages/${page.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        setStatus('保存済み', false);
     } catch (e) {
         // 新規作成が必要な場合のエラーハンドリング
         if(e.message && e.message.includes('404')) {
             await createPageInApi(page);
+            setStatus('保存済み', false);
         } else {
             console.error('Update error:', e);
+            setStatus('保存に失敗しました', true);
         }
     }
 }

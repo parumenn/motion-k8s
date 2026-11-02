@@ -928,6 +928,17 @@ function renderTree() {
             
             const toggle = document.createElement('div'); toggle.className = 'tree-toggle';
             toggle.innerHTML = children.length > 0 ? (isExpanded ? '▼' : '▶') : '•';
+            // キーボード操作 (R2-5)：子を持つ場合のみ展開トグルをフォーカス可能にし、
+            // Enter/Space でマウスと同じ展開・折りたたみを行う（子なしの「•」は操作対象外）。
+            if (children.length > 0) {
+                toggle.setAttribute('role', 'button');
+                toggle.tabIndex = 0;
+                toggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+                toggle.setAttribute('aria-label', '子ページの展開・折りたたみ');
+                toggle.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle.click(); }
+                });
+            }
             
             const title = document.createElement('div'); title.className = 'tree-title';
             let titleText = page.title || '無題';
@@ -1036,9 +1047,11 @@ function renderTree() {
                             return;
                         }
                         childContainer.classList.remove('hidden'); toggle.innerHTML = '▼';
+                        toggle.setAttribute('aria-expanded', 'true');
                         if (!state.expandedNodes.includes(id)) state.expandedNodes.push(id);
                     } else {
                         childContainer.classList.add('hidden'); toggle.innerHTML = '▶';
+                        toggle.setAttribute('aria-expanded', 'false');
                         state.expandedNodes = state.expandedNodes.filter(n => n !== id);
                     }
                     saveData(); e.stopPropagation(); return;
@@ -1561,19 +1574,46 @@ function renderBlocks(blockArray, container) {
         main.className = 'block-main';
         
         main.innerHTML = `<div class="drag-handle" onmouseup="if(!window.isDraggingBlock) showBlockMenu(event, this)"><svg class="icon"><use href="#icon-grip"></use></svg></div>`;
-        
-        if (blockData.type === 'todo') { 
-            const cb = document.createElement('div'); 
-            cb.className = 'todo-checkbox'; 
-            cb.onclick = () => { wrapper.classList.toggle('checked'); saveEditorState(true); }; 
-            main.appendChild(cb); 
+        // キーボード操作 (R2-5)：ドラッグハンドルをフォーカス可能にし、Enter/Space で
+        // マウスと同じブロックメニューを開く（ドラッグ自体のキーボード操作は対象外）。
+        const dragHandle = main.querySelector('.drag-handle');
+        if (dragHandle) {
+            dragHandle.setAttribute('role', 'button');
+            dragHandle.tabIndex = 0;
+            dragHandle.setAttribute('aria-label', 'ブロックメニューを開く');
+            dragHandle.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!window.isDraggingBlock) showBlockMenu(e, dragHandle); }
+            });
         }
-        if (blockData.type === 'toggle') { 
-            const tg = document.createElement('div'); 
-            tg.className = 'toggle-icon'; 
-            tg.innerHTML = '<svg class="icon"><use href="#icon-toggle"></use></svg>'; 
-            tg.onclick = () => { wrapper.classList.toggle('open'); saveEditorState(true); }; 
-            main.appendChild(tg); 
+
+        if (blockData.type === 'todo') {
+            const cb = document.createElement('div');
+            cb.className = 'todo-checkbox';
+            cb.setAttribute('role', 'checkbox');
+            cb.tabIndex = 0;
+            cb.setAttribute('aria-checked', blockData.checked ? 'true' : 'false');
+            cb.setAttribute('aria-label', 'タスクの完了状態を切り替える');
+            const toggleTodo = () => { wrapper.classList.toggle('checked'); cb.setAttribute('aria-checked', wrapper.classList.contains('checked') ? 'true' : 'false'); saveEditorState(true); };
+            cb.onclick = toggleTodo;
+            cb.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTodo(); }
+            });
+            main.appendChild(cb);
+        }
+        if (blockData.type === 'toggle') {
+            const tg = document.createElement('div');
+            tg.className = 'toggle-icon';
+            tg.innerHTML = '<svg class="icon"><use href="#icon-toggle"></use></svg>';
+            tg.setAttribute('role', 'button');
+            tg.tabIndex = 0;
+            tg.setAttribute('aria-expanded', blockData.toggleOpen ? 'true' : 'false');
+            tg.setAttribute('aria-label', '折りたたみリストを開く・閉じる');
+            const toggleToggle = () => { wrapper.classList.toggle('open'); tg.setAttribute('aria-expanded', wrapper.classList.contains('open') ? 'true' : 'false'); saveEditorState(true); };
+            tg.onclick = toggleToggle;
+            tg.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleToggle(); }
+            });
+            main.appendChild(tg);
         }
 
         const content = document.createElement('div'); 
@@ -2414,6 +2454,17 @@ function showBlockMenu(e, handleEl) {
     blockMenuEl.style.top = `${top}px`;
     blockMenuEl.style.left = `${left}px`;
 }
+
+// キーボード操作 (R2-5)：div 実装のメニュー項目（コンテキストメニュー／ブロックメニュー）も
+// Enter/Space で実行できるようにする。静的 HTML のため読み込み時に一度だけ付与する。
+// （ドラッグハンドルからキーボードで開いたブロックメニューを、キーボードだけで操作可能にするため）
+document.querySelectorAll('#context-menu .menu-item, #block-menu .menu-item').forEach((menuItem) => {
+    menuItem.setAttribute('role', 'menuitem');
+    menuItem.tabIndex = 0;
+    menuItem.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); menuItem.click(); }
+    });
+});
 
 function executeBlockMenu(action) {
     if (!blockMenuTarget) return;

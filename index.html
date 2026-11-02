@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     
-    <link rel="stylesheet" href="styles.css?v=20261103m">
+    <link rel="stylesheet" href="styles.css?v=20261103n">
 </head>
 <body>
     <script>try { if (localStorage.getItem('local_workspace_theme') === 'dark') document.body.classList.add('dark-mode'); } catch (e) {}</script>
@@ -52,7 +52,7 @@
     
     <div class="password-input-wrapper">
         <input type="password" id="auth-password" name="password" placeholder="パスワード" autocomplete="current-password">
-        <button type="button" class="toggle-password-btn" data-target="auth-password" title="パスワードを表示">
+        <button type="button" class="toggle-password-btn" data-target="auth-password" aria-label="パスワードを表示" title="パスワードを表示">
             <svg class="icon"><use href="#icon-eye"></use></svg>
         </button>
     </div>
@@ -60,7 +60,7 @@
     <!-- アカウント作成時のみ表示する確認用フィールド -->
     <div id="auth-password-confirm-wrapper" class="password-input-wrapper hidden">
         <input type="password" id="auth-password-confirm" placeholder="パスワード（確認用）" autocomplete="new-password">
-        <button type="button" class="toggle-password-btn" data-target="auth-password-confirm" title="パスワードを表示">
+        <button type="button" class="toggle-password-btn" data-target="auth-password-confirm" aria-label="パスワードを表示" title="パスワードを表示">
             <svg class="icon"><use href="#icon-eye"></use></svg>
         </button>
     </div>
@@ -76,7 +76,7 @@
     <nav id="sidebar">
         <div class="sidebar-header">
             <span>Motion</span>
-            <button id="search-btn" title="検索 (Ctrl+P)"><svg class="icon"><use href="#icon-search"></use></svg></button>
+            <button id="search-btn" aria-label="検索" title="検索 (Ctrl+P)"><svg class="icon"><use href="#icon-search"></use></svg></button>
         </div>
         <div class="sidebar-home" id="btn-home">
             <svg class="icon"><use href="#icon-home"></use></svg> ホーム
@@ -84,15 +84,15 @@
         <div class="tree-container" id="tree"></div>
         <div class="sidebar-footer">
             <button id="add-page-btn">+ 新規ページ</button>
-            <button id="trash-btn" title="ゴミ箱">🗑 ゴミ箱</button>
-            <button id="settings-btn" title="設定"><svg class="icon"><use href="#icon-settings"></use></svg></button>
+            <button id="trash-btn" aria-label="ゴミ箱" title="ゴミ箱">🗑 ゴミ箱</button>
+            <button id="settings-btn" aria-label="設定" title="設定"><svg class="icon"><use href="#icon-settings"></use></svg></button>
         </div>
     </nav>
     <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
     <main id="main">
         <div id="mobile-topbar" class="mobile-topbar">
-            <button id="sidebar-toggle-btn"><svg class="icon"><use href="#icon-menu"></use></svg></button>
+            <button id="sidebar-toggle-btn" aria-label="サイドバー切替"><svg class="icon"><use href="#icon-menu"></use></svg></button>
             <span class="mobile-title" id="mobile-topbar-title">Motion</span>
         </div>
 
@@ -133,37 +133,37 @@
     </main>
 
     <div id="floating-menu" class="hidden">
-        <button data-cmd="bold" title="太字"><b>B</b></button>
-        <button data-cmd="italic" title="斜体"><i>I</i></button>
-        <button data-cmd="strikeThrough" title="打消線"><s>S</s></button>
+        <button data-cmd="bold" aria-label="太字" title="太字"><b>B</b></button>
+        <button data-cmd="italic" aria-label="斜体" title="斜体"><i>I</i></button>
+        <button data-cmd="strikeThrough" aria-label="打消線" title="打消線"><s>S</s></button>
         
         <div class="color-picker-wrapper">
-            <button title="文字色">A<small>▼</small></button>
+            <button aria-label="文字色" title="文字色">A<small>▼</small></button>
             <div class="color-palette">
-                <button data-cmd="foreColor" data-val="#d93025" style="color:#d93025;" title="赤">●</button>
-                <button data-cmd="foreColor" data-val="#e37400" style="color:#e37400;" title="オレンジ">●</button>
-                <button data-cmd="foreColor" data-val="#f2c41c" style="color:#f2c41c;" title="黄">●</button>
-                <button data-cmd="foreColor" data-val="#1aa260" style="color:#1aa260;" title="緑">●</button>
-                <button data-cmd="foreColor" data-val="#2383e2" style="color:#2383e2;" title="青">●</button>
-                <button data-cmd="foreColor" data-val="#b324c4" style="color:#b324c4;" title="紫">●</button>
-                <button data-cmd="foreColor" data-val="#9a9a97" style="color:#9a9a97;" title="グレー">●</button>
+                <button data-cmd="foreColor" data-val="#d93025" style="color:#d93025;" aria-label="赤" title="赤">●</button>
+                <button data-cmd="foreColor" data-val="#e37400" style="color:#e37400;" aria-label="オレンジ" title="オレンジ">●</button>
+                <button data-cmd="foreColor" data-val="#f2c41c" style="color:#f2c41c;" aria-label="黄" title="黄">●</button>
+                <button data-cmd="foreColor" data-val="#1aa260" style="color:#1aa260;" aria-label="緑" title="緑">●</button>
+                <button data-cmd="foreColor" data-val="#2383e2" style="color:#2383e2;" aria-label="青" title="青">●</button>
+                <button data-cmd="foreColor" data-val="#b324c4" style="color:#b324c4;" aria-label="紫" title="紫">●</button>
+                <button data-cmd="foreColor" data-val="#9a9a97" style="color:#9a9a97;" aria-label="グレー" title="グレー">●</button>
             </div>
         </div>
 
         <div class="color-picker-wrapper">
-            <button title="ハイライト">H<small>▼</small></button>
+            <button aria-label="ハイライト" title="ハイライト">H<small>▼</small></button>
             <div class="color-palette">
-                <button data-cmd="hiliteColor" data-val="#f8a79b" style="background:#f8a79b;" title="赤背景"></button>
-                <button data-cmd="hiliteColor" data-val="#fbe090" style="background:#fbe090;" title="オレンジ背景"></button>
-                <button data-cmd="hiliteColor" data-val="#fdf058" style="background:#fdf058;" title="黄背景"></button>
-                <button data-cmd="hiliteColor" data-val="#a8dfb0" style="background:#a8dfb0;" title="緑背景"></button>
-                <button data-cmd="hiliteColor" data-val="#a4d1f2" style="background:#a4d1f2;" title="青背景"></button>
-                <button data-cmd="hiliteColor" data-val="#d4b4e5" style="background:#d4b4e5;" title="紫背景"></button>
-                <button data-cmd="hiliteColor" data-val="#e9e9e7" style="background:#e9e9e7;" title="グレー背景"></button>
+                <button data-cmd="hiliteColor" data-val="#f8a79b" style="background:#f8a79b;" aria-label="赤背景" title="赤背景"></button>
+                <button data-cmd="hiliteColor" data-val="#fbe090" style="background:#fbe090;" aria-label="オレンジ背景" title="オレンジ背景"></button>
+                <button data-cmd="hiliteColor" data-val="#fdf058" style="background:#fdf058;" aria-label="黄背景" title="黄背景"></button>
+                <button data-cmd="hiliteColor" data-val="#a8dfb0" style="background:#a8dfb0;" aria-label="緑背景" title="緑背景"></button>
+                <button data-cmd="hiliteColor" data-val="#a4d1f2" style="background:#a4d1f2;" aria-label="青背景" title="青背景"></button>
+                <button data-cmd="hiliteColor" data-val="#d4b4e5" style="background:#d4b4e5;" aria-label="紫背景" title="紫背景"></button>
+                <button data-cmd="hiliteColor" data-val="#e9e9e7" style="background:#e9e9e7;" aria-label="グレー背景" title="グレー背景"></button>
             </div>
         </div>
 
-        <button data-cmd="removeFormat" title="書式クリア">✕</button>
+        <button data-cmd="removeFormat" aria-label="書式クリア" title="書式クリア">✕</button>
     </div>
 
     <div id="context-menu" class="hidden">
@@ -198,7 +198,7 @@
             <div class="password-input-wrapper">
                 <!-- type="text" にしてブラウザの自動入力を完全に回避 -->
                 <input type="text" id="modal-pass" placeholder="ロック解除キー" autocomplete="one-time-code" inputmode="url" spellcheck="false" data-1p-ignore="true" data-lpignore="true" data-bwignore="true" style="-webkit-text-security: disc;">
-                <button type="button" class="toggle-password-btn" data-target="modal-pass" title="パスワードを表示">
+                <button type="button" class="toggle-password-btn" data-target="modal-pass" aria-label="パスワードを表示" title="パスワードを表示">
                     <svg class="icon"><use href="#icon-eye"></use></svg>
                 </button>
             </div>
@@ -218,7 +218,7 @@
     <!-- 設定モーダル -->
     <div id="settings-overlay" class="hidden">
         <div class="settings-modal">
-            <button id="settings-close" class="close-icon-btn">×</button>
+            <button id="settings-close" class="close-icon-btn" aria-label="閉じる">×</button>
             <div class="settings-sidebar" id="settings-sidebar">
                 <div class="settings-tab active" data-tab="appearance">外観・一般</div>
                 <div class="settings-tab" data-tab="account">アカウント</div>
@@ -324,7 +324,7 @@
 
 <!-- ▼▼ モバイルツールバー ▼▼ -->
     <div id="mobile-toolbar" class="mobile-toolbar">
-        <button class="m-tool-btn" data-action="menu">＋</button>
+        <button class="m-tool-btn" data-action="menu" aria-label="機能を追加">＋</button>
         <button class="m-tool-btn" data-action="h1">H1</button>
         <button class="m-tool-btn" data-action="todo">Todo</button>
         <button class="m-tool-btn" data-action="image">IMG</button>
@@ -336,7 +336,7 @@
         <div id="mobile-bottom-sheet">
             <div class="sheet-header">
                 <span>機能を追加</span>
-                <button id="close-sheet-btn">✕</button>
+                <button id="close-sheet-btn" aria-label="閉じる">✕</button>
             </div>
             <div class="sheet-content" id="mobile-sheet-content">
                 <!-- JSでコマンド一覧を生成 -->

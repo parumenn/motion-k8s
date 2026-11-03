@@ -2860,6 +2860,103 @@ document.getElementById('search-input')?.addEventListener('keydown', (e) => {
     }
 });
 
+// ================= APIキー管理（設定モーダル） =================
+function formatApiKeyDate(value) {
+    if (!value) return '未使用';
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('ja-JP');
+}
+
+async function loadApiKeys() {
+    const listEl = document.getElementById('apikey-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">読み込み中...</p>';
+    try {
+        const keys = await apiFetch('/api/api-keys');
+        if (!Array.isArray(keys) || keys.length === 0) {
+            listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">まだAPIキーがありません。</p>';
+            return;
+        }
+        listEl.innerHTML = '';
+        keys.forEach(k => {
+            const revoked = !!k.revoked_at;
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:10px 12px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;' + (revoked ? ' opacity:0.55;' : '');
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-weight:600; font-size:14px;';
+            nameEl.textContent = k.name || '名称未設定';
+            const metaEl = document.createElement('div');
+            metaEl.style.cssText = 'font-size:12px; color:var(--text-muted); margin-top:4px;';
+            metaEl.textContent = 'スコープ: ' + ((k.scopes || []).join(', ') || '-') + ' / 発行: ' + formatApiKeyDate(k.created_at) + ' / 最終利用: ' + formatApiKeyDate(k.last_used_at) + (revoked ? ' / 失効: ' + formatApiKeyDate(k.revoked_at) : '');
+            row.appendChild(nameEl);
+            row.appendChild(metaEl);
+            if (!revoked) {
+                const btn = document.createElement('button');
+                btn.className = 'danger-btn';
+                btn.textContent = '失効させる';
+                btn.style.cssText = 'margin-top:8px; padding:4px 10px; font-size:12px;';
+                btn.addEventListener('click', async () => {
+                    if (!confirm('このAPIキーを失効させますか？このキーを使っているエージェントは即座にアクセスできなくなります。')) return;
+                    btn.disabled = true;
+                    try {
+                        await apiFetch('/api/api-keys/' + k.id + '/revoke', { method: 'POST' });
+                        await loadApiKeys();
+                    } catch (err) {
+                        alert('失効に失敗しました: ' + err.message);
+                        btn.disabled = false;
+                    }
+                });
+                row.appendChild(btn);
+            } else {
+                const st = document.createElement('div');
+                st.style.cssText = 'font-size:12px; color:#d93025; margin-top:4px; font-weight:600;';
+                st.textContent = '失効済み';
+                row.appendChild(st);
+            }
+            listEl.appendChild(row);
+        });
+    } catch (err) {
+        listEl.innerHTML = '';
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:13px; color:#d93025;';
+        p.textContent = 'APIキーの取得に失敗しました: ' + err.message;
+        listEl.appendChild(p);
+    }
+}
+
+document.querySelector('.settings-tab[data-tab="apikeys"]')?.addEventListener('click', loadApiKeys);
+
+document.getElementById('btn-issue-apikey')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-issue-apikey');
+    const nameInput = document.getElementById('input-apikey-name');
+    btn.disabled = true;
+    try {
+        const created = await apiFetch('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: nameInput.value || '' }) });
+        const val = document.getElementById('issued-apikey-value');
+        val.value = created.apiKey || '';
+        document.getElementById('apikey-issued-box').classList.remove('hidden');
+        nameInput.value = '';
+        await loadApiKeys();
+    } catch (err) {
+        alert('APIキーの発行に失敗しました: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('btn-copy-apikey')?.addEventListener('click', async () => {
+    const val = document.getElementById('issued-apikey-value');
+    if (!val.value) return;
+    try {
+        await navigator.clipboard.writeText(val.value);
+        alert('APIキーをコピーしました');
+    } catch (e) {
+        val.select();
+        document.execCommand('copy');
+    }
+});
+
 // ================= 管理者用 (非Appwrite化に伴い一時無効化) =================
 // ※新しいAPIバックエンドには管理・承認用エンドポイントをまだ設けていないため、
 // 今回はメッセージのみを表示し、動作を無効化しています。

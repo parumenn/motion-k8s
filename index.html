@@ -222,6 +222,7 @@
             <div class="settings-sidebar" id="settings-sidebar">
                 <div class="settings-tab active" data-tab="appearance">外観・一般</div>
                 <div class="settings-tab" data-tab="account">アカウント</div>
+                <div class="settings-tab" data-tab="apikeys">APIキー</div>
                 <div class="settings-tab" data-tab="data">データ管理</div>
                 <div class="settings-tab" data-tab="danger">危険な操作</div>
                 <!-- ★ 管理者専用タブ（初期状態は隠す） -->
@@ -274,6 +275,27 @@
                     </div>
 
                     <button id="btn-logout" class="danger-btn" style="margin-top:32px;">ログアウト</button>
+                </div>
+
+                <!-- APIキー -->
+                <div id="tab-apikeys" class="tab-pane hidden">
+                    <h3>APIキー</h3>
+                    <p class="modal-desc" style="text-align:left;">外部のAIエージェントなどから Motion のAPIを使うためのキーです。発行したキーは、発行したアカウントのページにのみアクセスできます。</p>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:16px;">
+                        <input type="text" id="input-apikey-name" placeholder="キーの名前（例: ChatGPT用）" maxlength="100" style="padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main);">
+                        <button id="btn-issue-apikey" class="primary-btn">新しいAPIキーを発行</button>
+                    </div>
+                    <div id="apikey-issued-box" class="hidden" style="margin-top:16px; padding:12px; border:1px solid var(--accent); border-radius:6px;">
+                        <p style="font-size:13px; font-weight:600; margin-bottom:8px;">⚠️ このキーは今だけ表示されます。必ずコピーして安全な場所に保存してください（再表示はできません）。</p>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="issued-apikey-value" readonly style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); font-family:monospace; font-size:12px;">
+                            <button id="btn-copy-apikey" class="cancel-btn">コピー</button>
+                        </div>
+                    </div>
+                    <h4 style="margin-top:24px;">発行済みのキー</h4>
+                    <div id="apikey-list" style="margin-top:12px;">
+                        <p style="font-size:13px; color:var(--text-muted);">読み込み中...</p>
+                    </div>
                 </div>
 
                 <!-- データ管理 -->
@@ -345,6 +367,6 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103v"></script>
+    <script src="script.js?v=20261103w"></script>
 </body>
 </html>

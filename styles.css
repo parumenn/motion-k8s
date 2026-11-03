@@ -1968,3 +1968,122 @@ body.dark-mode .selected-block > .block-main {
         break-after: avoid;
     }
 }
+
+/* ================= ラウンド3 #1: トースト通知・確認ダイアログ =================
+   Gemini 3.1 Pro 生成コードをレビューし、既存のオーバーレイ構造に合わせて調整。 */
+#toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 200000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: none;
+}
+
+@media (max-width: 768px) {
+    #toast-container {
+        top: auto;
+        bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+        right: 1rem;
+        left: 1rem;
+    }
+}
+
+.toast {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1rem 2.5rem 1rem 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    position: relative;
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    width: 320px;
+    max-width: 100%;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+@media (max-width: 768px) {
+    .toast {
+        transform: translateY(100%);
+        width: 100%;
+    }
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translate(0);
+}
+
+.toast-info { border-left: 4px solid var(--accent); }
+.toast-success { border-left: 4px solid #28a745; }
+.toast-error { border-left: 4px solid #dc3545; }
+
+.toast-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.25rem;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.toast-close:hover {
+    color: var(--text-main);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast {
+        transition: none;
+    }
+}
+
+/* 確認ダイアログ：既存オーバーレイ（#trash-overlay 等）と同じ見た目に揃える */
+#confirm-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px) saturate(150%);
+    -webkit-backdrop-filter: blur(8px) saturate(150%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300000;
+}
+
+.confirm-modal {
+    width: 400px;
+    max-width: 92vw;
+    text-align: left;
+}
+
+#confirm-message {
+    white-space: pre-wrap;
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+}
+
+.confirm-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+#confirm-ok.danger {
+    background: #dc3545;
+    border-color: #dc3545;
+    color: #fff;
+}

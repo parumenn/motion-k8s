@@ -286,7 +286,7 @@ async function uploadAndInsertImage(file, targetBlock) {
         saveEditorState(true); 
         reinitSortables();
     } catch (err) {
-        alert("画像のアップロードに失敗しました: " + err.message);
+        showToast("画像のアップロードに失敗しました: " + err.message, { type: 'error' });
         console.error(err);
     }
 }
@@ -367,7 +367,7 @@ async function initApp() {
         } else {
             if (targetPage) {
                 // 存在しないページIDが指定された場合
-                alert("指定されたページは存在しないか、削除されています。");
+                showToast("指定されたページは存在しないか、削除されています。", { type: 'error' });
                 history.replaceState(null, '', window.location.pathname);
             }
             openPage('home', true);
@@ -426,11 +426,11 @@ function showAuthModal() {
         const pass = passwordInput.value.trim();
         const confirmPass = confirmInput ? confirmInput.value.trim() : '';
         
-        if (!email || !pass) return alert('メールアドレスとパスワードを入力してください');
+        if (!email || !pass) return showToast('メールアドレスとパスワードを入力してください', { type: 'error' });
 
         if (isSignUp) {
-            if (pass !== confirmPass) return alert('パスワードと確認用パスワードが一致しません');
-            if (pass.length < 8) return alert('パスワードは8文字以上で設定してください');
+            if (pass !== confirmPass) return showToast('パスワードと確認用パスワードが一致しません', { type: 'error' });
+            if (pass.length < 8) return showToast('パスワードは8文字以上で設定してください', { type: 'error' });
         }
 
         try {
@@ -439,7 +439,7 @@ function showAuthModal() {
                     method: 'POST',
                     body: JSON.stringify({ email, password: pass })
                 });
-                alert('アカウントを作成しました。管理者の承認をお待ちください。');
+                showToast('アカウントを作成しました。管理者の承認をお待ちください。', { type: 'success' });
                 location.reload();
             } else {
                 const res = await apiFetch('/api/auth/login', {
@@ -451,7 +451,7 @@ function showAuthModal() {
                 location.reload();
             }
         } catch (e) {
-            alert(`エラー: ${e.message}`);
+            showToast(`エラー: ${e.message}`, { type: 'error' });
         }
     };
 }
@@ -1213,9 +1213,9 @@ document.getElementById('ctx-move-down')?.addEventListener('click', () => {
     applySiblingOrder(page.parentId, siblings);
 });
 
-document.getElementById('ctx-delete-page')?.addEventListener('click', () => {
+document.getElementById('ctx-delete-page')?.addEventListener('click', async () => {
     contextMenuEl?.classList.add('hidden');
-    if(confirm("このページをゴミ箱に移動しますか？（サブページも一緒に移動します。ゴミ箱から復元できます）")) {
+    if(await showConfirm("このページをゴミ箱に移動しますか？（サブページも一緒に移動します。ゴミ箱から復元できます）")) {
         (async () => {
             // 子孫はサーバー側でまとめてゴミ箱へ移動するので、DELETE は1回だけ送る
             try {
@@ -1286,14 +1286,14 @@ function renderTrashList(trashed) {
     purgeBtn.className = 'trash-purge-btn';
     purgeBtn.textContent = '期限切れ（30日経過）を今すぐ削除';
     purgeBtn.addEventListener('click', async () => {
-        if(!confirm("削除から30日を経過したゴミ箱ページをすべて完全に削除しますか？この操作は元に戻せません。")) return;
+        if(!(await showConfirm("削除から30日を経過したゴミ箱ページをすべて完全に削除しますか？この操作は元に戻せません。", { danger: true }))) return;
         try {
             const result = await apiFetch('/api/pages/trash/purge', { method: 'POST' });
-            alert(`${result.purged}件の期限切れページを削除しました`);
+            showToast(`${result.purged}件の期限切れページを削除しました`, { type: 'success' });
             openTrashModal();
         } catch (e) {
             console.error('Trash purge error:', e);
-            alert('期限切れページの削除に失敗しました');
+            showToast('期限切れページの削除に失敗しました', { type: 'error' });
         }
     });
     listEl.appendChild(purgeBtn);
@@ -1330,20 +1330,20 @@ function renderTrashList(trashed) {
                 openTrashModal();
             } catch (e) {
                 console.error('Restore error:', e);
-                alert('復元に失敗しました');
+                showToast('復元に失敗しました', { type: 'error' });
             }
         });
         const permanentBtn = document.createElement('button');
         permanentBtn.className = 'trash-permanent-btn';
         permanentBtn.textContent = '完全に削除';
         permanentBtn.addEventListener('click', async () => {
-            if(!confirm("このページを完全に削除しますか？この操作は元に戻せません。")) return;
+            if(!(await showConfirm("このページを完全に削除しますか？この操作は元に戻せません。", { danger: true }))) return;
             try {
                 await apiFetch(`/api/pages/${page.id}/permanent`, { method: 'DELETE' });
                 openTrashModal();
             } catch (e) {
                 console.error('Permanent delete error:', e);
-                alert('完全削除に失敗しました');
+                showToast('完全削除に失敗しました', { type: 'error' });
             }
         });
         row.appendChild(info);
@@ -1607,7 +1607,7 @@ function showPasswordModal(lockParentId, onSuccess) {
             overlay.classList.add('hidden'); 
             if(onSuccess) onSuccess();
         } else {
-            alert("パスワードが間違っています。");
+            showToast("パスワードが間違っています。", { type: 'error' });
             modalPass.value = '';
             modalPass.focus();
         }
@@ -1630,10 +1630,10 @@ document.getElementById('modal-cancel')?.addEventListener('click', () => {
         openPage('home', true);
     }
 });
-document.getElementById('lock-btn')?.addEventListener('click', () => {
+document.getElementById('lock-btn')?.addEventListener('click', async () => {
     const page = state.pages[state.currentPageId];
     if (page.isLocked) {
-        if(confirm("パスワード保護を解除しますか？")) {
+        if(await showConfirm("パスワード保護を解除しますか？")) {
             page.isLocked = false; page.password = null; page.isUnlockedSession = false;
             saveEditorState(true); openPage(state.currentPageId);
         }
@@ -2779,7 +2779,7 @@ document.getElementById('file-import')?.addEventListener('change', async (e) => 
         try {
             const imported = JSON.parse(event.target.result);
             if(imported && imported.pages) {
-                alert("バックエンドへのインポートを開始します。完了するまでブラウザを閉じないでください...");
+                showToast("バックエンドへのインポートを開始します。完了するまでブラウザを閉じないでください...", { type: 'info', duration: 0 });
                 for (const key of Object.keys(imported.pages)) {
                     const page = imported.pages[key];
                     const existing = state.pages[page.id];
@@ -2794,11 +2794,11 @@ document.getElementById('file-import')?.addEventListener('change', async (e) => 
                     recentPages: imported.recentPages || []
                 };
                 localStorage.setItem('motion_ui_state', JSON.stringify(uiState));
-                alert("復元が完了しました。ページを再読み込みします。");
+                showToast("復元が完了しました。ページを再読み込みします。", { type: 'success' });
                 location.reload();
             }
         } catch (err) {
-            alert("インポートに失敗しました: " + err.message);
+            showToast("インポートに失敗しました: " + err.message, { type: 'error' });
             console.error(err);
         }
     };
@@ -2806,7 +2806,7 @@ document.getElementById('file-import')?.addEventListener('change', async (e) => 
 });
 
 document.getElementById('btn-reset')?.addEventListener('click', async () => {
-    if(confirm("【警告】全データを消去します。\nこの操作はバックエンド上のあなたのデータも完全に削除します。よろしいですか？")) {
+    if(await showConfirm("【警告】全データを消去します。\nこの操作はバックエンド上のあなたのデータも完全に削除します。よろしいですか？", { danger: true })) {
         try {
             if (currentUser) {
                 const pages = await apiFetch('/api/pages');
@@ -2817,7 +2817,7 @@ document.getElementById('btn-reset')?.addEventListener('click', async () => {
             localStorage.clear(); 
             location.reload();
         } catch (err) {
-            alert("リセット失敗: " + err.message);
+            showToast("リセット失敗: " + err.message, { type: 'error' });
         }
     }
 });
@@ -2897,13 +2897,13 @@ async function loadApiKeys() {
                 btn.textContent = '失効させる';
                 btn.style.cssText = 'margin-top:8px; padding:4px 10px; font-size:12px;';
                 btn.addEventListener('click', async () => {
-                    if (!confirm('このAPIキーを失効させますか？このキーを使っているエージェントは即座にアクセスできなくなります。')) return;
+                    if (!(await showConfirm('このAPIキーを失効させますか？このキーを使っているエージェントは即座にアクセスできなくなります。', { danger: true }))) return;
                     btn.disabled = true;
                     try {
                         await apiFetch('/api/api-keys/' + k.id + '/revoke', { method: 'POST' });
                         await loadApiKeys();
                     } catch (err) {
-                        alert('失効に失敗しました: ' + err.message);
+                        showToast('失効に失敗しました: ' + err.message, { type: 'error' });
                         btn.disabled = false;
                     }
                 });
@@ -2939,7 +2939,7 @@ document.getElementById('btn-issue-apikey')?.addEventListener('click', async () 
         nameInput.value = '';
         await loadApiKeys();
     } catch (err) {
-        alert('APIキーの発行に失敗しました: ' + err.message);
+        showToast('APIキーの発行に失敗しました: ' + err.message, { type: 'error' });
     } finally {
         btn.disabled = false;
     }
@@ -2950,7 +2950,7 @@ document.getElementById('btn-copy-apikey')?.addEventListener('click', async () =
     if (!val.value) return;
     try {
         await navigator.clipboard.writeText(val.value);
-        alert('APIキーをコピーしました');
+        showToast('APIキーをコピーしました', { type: 'success' });
     } catch (e) {
         val.select();
         document.execCommand('copy');
@@ -3350,7 +3350,7 @@ document.getElementById('btn-export')?.addEventListener('click', async (e) => {
     try {
         await exportAllDataAndImages();
     } catch (err) {
-        alert("エラーが発生しました: " + err.message);
+        showToast("エラーが発生しました: " + err.message, { type: 'error' });
         console.error("Export Error:", err);
     } finally {
         btn.textContent = originalText;
@@ -3359,7 +3359,7 @@ document.getElementById('btn-export')?.addEventListener('click', async (e) => {
 });
 
 async function exportAllDataAndImages() {
-    alert("バックエンドから全データを取得・統合してZIP化します。\nデータ量によって数十秒かかる場合があります。このままお待ちください...");
+    showToast("バックエンドから全データを取得・統合してZIP化します。\nデータ量によって数十秒かかる場合があります。このままお待ちください...", { type: 'info', duration: 0 });
     
     const zip = new JSZip();
     let exportData = JSON.parse(JSON.stringify(state));
@@ -3437,7 +3437,7 @@ async function exportAllDataAndImages() {
     downloadLink.download = `motion_backup_${new Date().toISOString().slice(0,10)}.zip`;
     downloadLink.click();
     
-    alert(`エクスポートが完了しました！\n画像 ${fileNames.length} 枚をZIPに格納しました。`);
+    showToast(`エクスポートが完了しました！\n画像 ${fileNames.length} 枚をZIPに格納しました。`, { type: 'success' });
 }
 // =========================================================
 async function fetchTotalMediaSize() {
@@ -3493,3 +3493,125 @@ window.addEventListener('popstate', (e) => {
     }
     openPage(pageId, true);
 });
+
+// ================= ラウンド3 #1: トースト通知・確認ダイアログ =================
+// Gemini 3.1 Pro 生成コードをレビューし、Motion の既存モーダル構造
+// （#overlay + .modal カード）に合わせて調整したもの。
+function showToast(message, options = {}) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const type = options.type || 'info';
+    const duration = options.duration !== undefined ? options.duration : (type === 'error' ? 6000 : 4000);
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+    const textSpan = document.createElement('span');
+    textSpan.textContent = message;
+    toast.appendChild(textSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', '閉じる');
+    closeBtn.onclick = () => removeToast(toast);
+    toast.appendChild(closeBtn);
+
+    // 最大4件まで（古いものから押し出す）
+    while (container.children.length >= 4) {
+        container.removeChild(container.firstChild);
+    }
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.classList.add('show');
+    });
+
+    if (duration > 0) {
+        setTimeout(() => {
+            if (toast.parentElement) removeToast(toast);
+        }, duration);
+    }
+
+    function removeToast(el) {
+        el.classList.remove('show');
+        // transitionend が来ない環境（reduced-motion 等）でも消えるよう保険をかける
+        let removed = false;
+        const doRemove = () => {
+            if (!removed && el.parentElement) { removed = true; el.remove(); }
+        };
+        el.addEventListener('transitionend', doRemove);
+        setTimeout(doRemove, 400);
+    }
+}
+
+let currentConfirmResolver = null;
+let confirmPreviousFocus = null;
+
+function showConfirm(message, options = {}) {
+    return new Promise((resolve) => {
+        if (currentConfirmResolver) {
+            currentConfirmResolver(false); // 既に開いていたら前のものをキャンセル扱いにする
+        }
+
+        currentConfirmResolver = resolve;
+        confirmPreviousFocus = document.activeElement;
+
+        const overlay = document.getElementById('confirm-overlay');
+        const msgEl = document.getElementById('confirm-message');
+        const cancelBtn = document.getElementById('confirm-cancel');
+        const okBtn = document.getElementById('confirm-ok');
+
+        msgEl.textContent = message;
+        cancelBtn.textContent = options.cancelLabel || 'キャンセル';
+        okBtn.textContent = options.okLabel || 'OK';
+
+        if (options.danger) {
+            okBtn.classList.add('danger');
+        } else {
+            okBtn.classList.remove('danger');
+        }
+
+        const cleanupAndResolve = (result) => {
+            overlay.classList.add('hidden');
+            overlay.removeEventListener('keydown', keydownHandler);
+            overlay.removeEventListener('click', backdropHandler);
+            if (confirmPreviousFocus && confirmPreviousFocus.focus) confirmPreviousFocus.focus();
+            currentConfirmResolver = null;
+            resolve(result);
+        };
+
+        const keydownHandler = (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                cleanupAndResolve(false);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                cleanupAndResolve(true);
+            }
+        };
+
+        const backdropHandler = (e) => {
+            if (e.target === overlay) {
+                cleanupAndResolve(false);
+            }
+        };
+
+        okBtn.onclick = () => cleanupAndResolve(true);
+        cancelBtn.onclick = () => cleanupAndResolve(false);
+
+        overlay.addEventListener('keydown', keydownHandler);
+        overlay.addEventListener('click', backdropHandler);
+        overlay.classList.remove('hidden');
+
+        if (options.danger) {
+            cancelBtn.focus();
+        } else {
+            okBtn.focus();
+        }
+    });
+}

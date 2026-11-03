@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 
     
-    <link rel="stylesheet" href="styles.css?v=20261103q">
+    <link rel="stylesheet" href="styles.css?v=20261103r">
 </head>
 <body>
     <script>try { if (localStorage.getItem('local_workspace_theme') === 'dark') document.body.classList.add('dark-mode'); } catch (e) {}</script>
@@ -367,6 +367,8 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103w"></script>
+    <script src="script.js?v=20261103x"></script>
+<div id="toast-container" aria-live="polite"></div>
+<div id="confirm-overlay" class="hidden"><div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-message"><div id="confirm-message"></div><div class="confirm-buttons"><button id="confirm-cancel" class="cancel-btn">キャンセル</button><button id="confirm-ok" class="primary-btn">OK</button></div></div></div>
 </body>
 </html>

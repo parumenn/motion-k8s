@@ -2016,6 +2016,9 @@ function reinitSortables() {
     const initS = (el) => sortableInstances.push(new Sortable(el, { 
         group: 'shared', 
         handle: '.drag-handle', 
+        delay: 350, 
+        delayOnTouchOnly: true, 
+        touchStartThreshold: 5, 
         animation: 150, 
         fallbackOnBody: true,
         fallbackTolerance: 3,

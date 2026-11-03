@@ -1888,3 +1888,83 @@ body.dark-mode .selected-block > .block-main {
 .trash-permanent-btn {
     color: #d64545;
 }
+
+/* ================= ラウンド3 #2: safe-area-inset 対応 =================
+   ノッチ／ホームバーのある端末で、画面端の UI が被らないようにする。
+   inset が 0 の環境では見た目は変わらない。 */
+.sidebar-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 1024px) {
+    #mobile-toolbar {
+        height: calc(50px + env(safe-area-inset-top, 0px)) !important;
+        padding-top: env(safe-area-inset-top, 0px) !important;
+    }
+
+    #mobile-bottom-sheet {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+}
+
+/* ================= ラウンド3 #9: 印刷向けスタイル ================= */
+@page {
+    margin: 14mm;
+}
+
+@media print {
+    #sidebar,
+    #mobile-toolbar,
+    #sidebar-overlay,
+    .sidebar-overlay,
+    #overlay,
+    #login-overlay,
+    #appwrite-sync-loader,
+    #context-menu,
+    #block-menu,
+    #floating-menu,
+    .modal,
+    #trash-overlay,
+    #search-overlay,
+    #link-overlay,
+    #ext-link-overlay,
+    #settings-overlay {
+        display: none !important;
+    }
+
+    html,
+    body {
+        height: auto !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    #editor-wrapper,
+    #editor {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        margin: 0 !important;
+    }
+
+    * {
+        color: #000 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+    }
+
+    a {
+        text-decoration: underline;
+    }
+
+    img {
+        max-width: 100% !important;
+    }
+
+    h1, h2, h3 {
+        break-after: avoid;
+    }
+}

@@ -1,6 +1,2 @@
 .git
 .github
-.dockerignore
-Dockerfile
-README.md
-default.conf

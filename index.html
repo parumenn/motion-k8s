@@ -48,7 +48,7 @@
             <div class="modal" style="box-shadow:none; border:none; background:transparent; width:100%; max-width:320px;">
                 <h3 id="auth-title">ログイン</h3>
                 <form id="auth-form" onsubmit="return false;" autocomplete="on">
-    <input type="email" id="auth-username" name="username" placeholder="メールアドレス" autocomplete="email">
+    <input type="email" id="auth-username" name="username" placeholder="メールアドレス" autocomplete="username webauthn">
     
     <div class="password-input-wrapper">
         <input type="password" id="auth-password" name="password" placeholder="パスワード" autocomplete="current-password">
@@ -274,6 +274,19 @@
                         <button id="btn-change-password" class="primary-btn" style="margin-top: 8px;">パスワード変更</button>
                     </div>
 
+                    <!-- パスキー管理 -->
+                    <div id="passkey-container" style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px;">
+                        <h4>パスキー</h4>
+                        <p class="modal-desc" style="text-align:left;">指紋・顔認証やセキュリティキーでログインできます。追加・削除には再認証が必要です。</p>
+                        <div id="passkey-list"><p style="font-size:13px; color:var(--text-muted);">読み込み中...</p></div>
+                        <button id="btn-add-passkey" class="primary-btn">パスキーを追加</button>
+                        <label style="font-size:14px; margin-top:8px;"><input type="checkbox" id="toggle-password-login-disabled"> パスワードログインを無効化する（パスキーのみでログイン）</label>
+                    </div>
+
+                    <div style="margin-top: 24px;">
+                        <button id="btn-revoke-sessions" class="cancel-btn">他のセッションをすべて失効させる</button>
+                    </div>
+
                     <button id="btn-logout" class="danger-btn" style="margin-top:32px;">ログアウト</button>
                 </div>
 
@@ -367,7 +380,7 @@
     </div>
     
     <!-- ★必ずすべてのHTML（UI）を記述した「後」に読み込む -->
-    <script src="script.js?v=20261103y"></script>
+    <script src="script.js?v=20261116a"></script>
 <div id="toast-container" aria-live="polite"></div>
 <div id="confirm-overlay" class="hidden"><div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-message"><div id="confirm-message"></div><div class="confirm-buttons"><button id="confirm-cancel" class="cancel-btn">キャンセル</button><button id="confirm-ok" class="primary-btn">OK</button></div></div></div>
 </body>

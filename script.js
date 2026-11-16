@@ -43,6 +43,7 @@ async function apiFetch(endpoint, options = {}) {
         try { errData = await res.json(); } catch(e) {}
         const err = new Error(errData.error || `HTTPエラー: ${res.status}`);
         err.status = res.status;
+        err.code = errData.code;
         if (errData.currentUpdatedAt) err.currentUpdatedAt = errData.currentUpdatedAt;
         // セッション切れ（R2-1）：JWT は 7日で失効するが、従来は 401 を放置して
         // 保存が毎回「保存に失敗しました」になるだけだった。認証系エンドポイント自体の
@@ -314,6 +315,14 @@ async function initApp() {
             }, 100);
         }
 
+        // メールリンク（本人確認 / パスワード再設定）から来た場合はその画面を出す
+        const earlyParams = new URLSearchParams(window.location.search);
+        if (earlyParams.get('token')) {
+            if (syncLoader) syncLoader.classList.add('hidden');
+            showTokenLinkForm(earlyParams.get('mode') === 'reset' ? 'reset' : 'verify', earlyParams.get('token'));
+            return;
+        }
+
         const token = localStorage.getItem('motion_token');
         if (!token || !currentUser) throw new Error('Not logged in');
 
@@ -409,6 +418,8 @@ function showAuthModal() {
     inputsWrapper.classList.remove('hidden');
     authOverlay.classList.remove('hidden');
     let isSignUp = false;
+    setupAuthExtraButtons();
+    startConditionalPasskeyLogin();
 
     authToggle.onclick = () => {
         isSignUp = !isSignUp;
@@ -430,17 +441,17 @@ function showAuthModal() {
 
         if (isSignUp) {
             if (pass !== confirmPass) return showToast('パスワードと確認用パスワードが一致しません', { type: 'error' });
-            if (pass.length < 8) return showToast('パスワードは8文字以上で設定してください', { type: 'error' });
+            if (pass.length < 12) return showToast('パスワードは12文字以上で設定してください', { type: 'error' });
         }
 
         try {
             if (isSignUp) {
                 await apiFetch('/api/auth/register', {
                     method: 'POST',
-                    body: JSON.stringify({ email, password: pass })
+                    body: JSON.stringify({ email })
                 });
-                showToast('アカウントを作成しました。管理者の承認をお待ちください。', { type: 'success' });
-                location.reload();
+                showToast('確認メールを送信しました。メール内のリンクから本登録（パスワード設定）を完了してください。', { type: 'success', duration: 9000 });
+                authToggle.click();
             } else {
                 const res = await apiFetch('/api/auth/login', {
                     method: 'POST',
@@ -513,6 +524,7 @@ document.querySelectorAll('input[name="theme"]').forEach(r => r.onchange = (e) =
 
 document.querySelector('.settings-tab[data-tab="account"]')?.addEventListener('click', () => {
     calcStorageUsage();
+    loadPasskeySection();
 });
 
 function formatBytes(bytes) {
@@ -2903,7 +2915,7 @@ async function loadApiKeys() {
                     if (!(await showConfirm('このAPIキーを失効させますか？このキーを使っているエージェントは即座にアクセスできなくなります。', { danger: true }))) return;
                     btn.disabled = true;
                     try {
-                        await apiFetch('/api/api-keys/' + k.id + '/revoke', { method: 'POST' });
+                        await apiFetchWithStepUp('/api/api-keys/' + k.id + '/revoke', { method: 'POST' });
                         await loadApiKeys();
                     } catch (err) {
                         showToast('失効に失敗しました: ' + err.message, { type: 'error' });
@@ -2935,7 +2947,7 @@ document.getElementById('btn-issue-apikey')?.addEventListener('click', async () 
     const nameInput = document.getElementById('input-apikey-name');
     btn.disabled = true;
     try {
-        const created = await apiFetch('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: nameInput.value || '' }) });
+        const created = await apiFetchWithStepUp('/api/api-keys', { method: 'POST', body: JSON.stringify({ name: nameInput.value || '' }) });
         const val = document.getElementById('issued-apikey-value');
         val.value = created.apiKey || '';
         document.getElementById('apikey-issued-box').classList.remove('hidden');
@@ -2960,14 +2972,13 @@ document.getElementById('btn-copy-apikey')?.addEventListener('click', async () =
     }
 });
 
-// ================= 管理者用 (非Appwrite化に伴い一時無効化) =================
-// ※新しいAPIバックエンドには管理・承認用エンドポイントをまだ設けていないため、
-// 今回はメッセージのみを表示し、動作を無効化しています。
+// ================= 管理者用 =================
+// 登録はメール確認制に移行したため、管理者による承認は不要になった。
 document.querySelector('.settings-tab[data-tab="admin"]')?.addEventListener('click', async () => {
     const listContainer = document.getElementById('admin-pending-users-list');
     if (!listContainer) return;
-    
-    listContainer.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">管理者機能は現在バックエンド移行中のためご利用いただけません。</p>';
+
+    listContainer.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">登録はメール確認制に移行しました。新規ユーザーは確認メールのリンクで本登録するため、管理者による承認は不要です。</p>';
 });
 
 document.addEventListener('click', (e) => {
@@ -3618,3 +3629,437 @@ function showConfirm(message, options = {}) {
         }
     });
 }
+
+// ================= 認証基盤の拡張（2026-11-16: パスキー / メール認証 / step-up） =================
+// マイボードで動作確認済みの方式を Motion に移植したもの。
+// クライアントの WebAuthn はライブラリを使わずネイティブ API + base64url 変換で実装する。
+
+function b64urlToBuffer(value) {
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+}
+
+function bufferToB64url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach(b => { binary += String.fromCharCode(b); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function credentialToJSON(cred) {
+    if (!cred) return null;
+    const result = {
+        id: cred.id,
+        rawId: bufferToB64url(cred.rawId),
+        type: cred.type,
+        response: {},
+        authenticatorAttachment: cred.authenticatorAttachment || undefined,
+        clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    };
+    const r = cred.response;
+    if (r.clientDataJSON) result.response.clientDataJSON = bufferToB64url(r.clientDataJSON);
+    if (r.attestationObject) result.response.attestationObject = bufferToB64url(r.attestationObject);
+    if (r.authenticatorData) result.response.authenticatorData = bufferToB64url(r.authenticatorData);
+    if (r.signature) result.response.signature = bufferToB64url(r.signature);
+    if (r.userHandle) result.response.userHandle = bufferToB64url(r.userHandle);
+    const transports = typeof r.getTransports === 'function' ? r.getTransports() : undefined;
+    if (transports) result.response.transports = transports;
+    return result;
+}
+
+function prepareCreationOptions(options) {
+    const o = { ...options };
+    o.challenge = b64urlToBuffer(options.challenge);
+    o.user = { ...options.user, id: b64urlToBuffer(options.user.id) };
+    if (Array.isArray(options.excludeCredentials)) {
+        o.excludeCredentials = options.excludeCredentials.map(c => ({ ...c, id: b64urlToBuffer(c.id) }));
+    }
+    return o;
+}
+
+function prepareRequestOptions(options) {
+    const o = { ...options };
+    o.challenge = b64urlToBuffer(options.challenge);
+    if (Array.isArray(options.allowCredentials)) {
+        o.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: b64urlToBuffer(c.id) }));
+    }
+    return o;
+}
+
+// ---- 汎用入力ダイアログ（step-up / メール入力 / パスキー名などに使う） ----
+function showAuthDialog({ title, message, fields = [], submitLabel = 'OK', extraLabel = null }) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; z-index:400000;';
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.cssText = 'width:400px; max-width:92vw;';
+        const h = document.createElement('h3');
+        h.textContent = title;
+        modal.appendChild(h);
+        if (message) {
+            const p = document.createElement('p');
+            p.className = 'modal-desc';
+            p.style.textAlign = 'left';
+            p.textContent = message;
+            modal.appendChild(p);
+        }
+        const inputs = {};
+        fields.forEach(f => {
+            const input = document.createElement('input');
+            input.type = f.type || 'text';
+            input.placeholder = f.placeholder || '';
+            if (f.autocomplete) input.autocomplete = f.autocomplete;
+            input.style.cssText = 'width:100%; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); margin-top:8px; box-sizing:border-box;';
+            modal.appendChild(input);
+            inputs[f.id] = input;
+        });
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex; gap:8px; margin-top:16px;';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'cancel-btn';
+        cancelBtn.textContent = 'キャンセル';
+        cancelBtn.style.flex = '1';
+        const submitBtn = document.createElement('button');
+        submitBtn.className = 'primary-btn';
+        submitBtn.textContent = submitLabel;
+        submitBtn.style.flex = '1';
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(submitBtn);
+        let extraBtn = null;
+        if (extraLabel) {
+            extraBtn = document.createElement('button');
+            extraBtn.className = 'cancel-btn';
+            extraBtn.textContent = extraLabel;
+            extraBtn.style.flex = '1';
+            btnRow.appendChild(extraBtn);
+        }
+        modal.appendChild(btnRow);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const close = (result) => { overlay.remove(); resolve(result); };
+        cancelBtn.onclick = () => close(null);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+        submitBtn.onclick = () => {
+            const values = {};
+            Object.entries(inputs).forEach(([id, el]) => { values[id] = el.value; });
+            close({ action: 'submit', values });
+        };
+        if (extraBtn) extraBtn.onclick = () => close({ action: 'extra', values: {} });
+        const first = Object.values(inputs)[0];
+        if (first) first.focus();
+    });
+}
+
+// ---- step-up 認証（再認証） ----
+// パスワード再入力をまず試し、パスワードログイン無効化済みの場合はパスキー方式に切り替える。
+async function ensureStepUp() {
+    const result = await showAuthDialog({
+        title: '再認証',
+        message: 'この操作には再認証が必要です。現在のパスワードを入力してください。パスキー登録済みの場合はパスキーでも再認証できます。',
+        fields: [{ id: 'password', type: 'password', placeholder: '現在のパスワード', autocomplete: 'current-password' }],
+        submitLabel: 'パスワードで認証',
+        extraLabel: 'パスキーで認証',
+    });
+    if (!result) return false;
+    try {
+        if (result.action === 'submit') {
+            if (!result.values.password) { showToast('パスワードを入力してください', { type: 'error' }); return false; }
+            await apiFetch('/api/auth/stepup/password', { method: 'POST', body: JSON.stringify({ password: result.values.password }) });
+            return true;
+        }
+        // パスキー方式
+        const options = await apiFetch('/api/auth/stepup/passkey/options', { method: 'POST', body: '{}' });
+        const cred = await navigator.credentials.get({ publicKey: prepareRequestOptions(options) });
+        await apiFetch('/api/auth/stepup/passkey/verify', { method: 'POST', body: JSON.stringify({ response: credentialToJSON(cred) }) });
+        return true;
+    } catch (e) {
+        if (e && e.name === 'NotAllowedError') return false;
+        showToast('再認証に失敗しました: ' + (e.message || e), { type: 'error' });
+        return false;
+    }
+}
+
+// step_up_required を受けたら再認証して1回だけ再試行する apiFetch ラッパー
+async function apiFetchWithStepUp(endpoint, options = {}) {
+    try {
+        return await apiFetch(endpoint, options);
+    } catch (e) {
+        if (e.code !== 'step_up_required') throw e;
+        if (!(await ensureStepUp())) throw e;
+        return await apiFetch(endpoint, options);
+    }
+}
+
+// ---- パスキーログイン（ログイン画面） ----
+let conditionalAbortController = null;
+
+function abortConditionalPasskeyLogin() {
+    if (conditionalAbortController) {
+        try { conditionalAbortController.abort(); } catch (e) { /* ignore */ }
+        conditionalAbortController = null;
+    }
+}
+
+async function passkeyLoginFlow(mediation) {
+    const options = await apiFetch('/api/auth/passkeys/login/options', { method: 'POST', body: '{}' });
+    const requestOptions = { publicKey: prepareRequestOptions(options) };
+    if (mediation) {
+        conditionalAbortController = new AbortController();
+        requestOptions.mediation = mediation;
+        requestOptions.signal = conditionalAbortController.signal;
+    }
+    const cred = await navigator.credentials.get(requestOptions);
+    if (!cred) throw new Error('パスキーが選択されませんでした');
+    const res = await apiFetch('/api/auth/passkeys/login/verify', { method: 'POST', body: JSON.stringify({ response: credentialToJSON(cred) }) });
+    localStorage.setItem('motion_token', res.token);
+    localStorage.setItem('motion_user', JSON.stringify(res.user));
+    location.reload();
+}
+
+async function startConditionalPasskeyLogin() {
+    try {
+        if (!window.PublicKeyCredential || !PublicKeyCredential.isConditionalMediationAvailable) return;
+        const available = await PublicKeyCredential.isConditionalMediationAvailable();
+        if (!available) return;
+        await passkeyLoginFlow('conditional');
+    } catch (e) {
+        // ユーザーがキャンセルした・未登録などの場合は静かに終わる（通常ログインを妨げない）
+    }
+}
+
+function setupAuthExtraButtons() {
+    const form = document.getElementById('auth-form');
+    if (!form || document.getElementById('btn-passkey-login')) return;
+    const passkeyBtn = document.createElement('button');
+    passkeyBtn.type = 'button';
+    passkeyBtn.id = 'btn-passkey-login';
+    passkeyBtn.className = 'cancel-btn';
+    passkeyBtn.textContent = 'パスキーでログイン';
+    passkeyBtn.style.cssText = 'width:100%; margin-top:8px;';
+    passkeyBtn.onclick = async () => {
+        abortConditionalPasskeyLogin();
+        passkeyBtn.disabled = true;
+        try {
+            await passkeyLoginFlow();
+        } catch (e) {
+            if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+                showToast('パスキーログインに失敗しました: ' + (e.message || e), { type: 'error' });
+            }
+        } finally {
+            passkeyBtn.disabled = false;
+        }
+    };
+    form.appendChild(passkeyBtn);
+
+    const forgotBtn = document.createElement('button');
+    forgotBtn.type = 'button';
+    forgotBtn.id = 'btn-forgot-password';
+    forgotBtn.className = 'cancel-btn';
+    forgotBtn.textContent = 'パスワードを忘れた方';
+    forgotBtn.style.cssText = 'width:100%; margin-top:8px;';
+    forgotBtn.onclick = async () => {
+        const emailInput = document.getElementById('auth-username');
+        const result = await showAuthDialog({
+            title: 'パスワード再設定',
+            message: '登録メールアドレスを入力してください。再設定用のリンクを送信します。',
+            fields: [{ id: 'email', type: 'email', placeholder: 'メールアドレス', autocomplete: 'email' }],
+            submitLabel: '送信する',
+        });
+        if (!result || result.action !== 'submit') return;
+        const email = (result.values.email || (emailInput ? emailInput.value : '')).trim();
+        if (!email) return showToast('メールアドレスを入力してください', { type: 'error' });
+        try {
+            await apiFetch('/api/auth/password/reset-request', { method: 'POST', body: JSON.stringify({ email }) });
+            showToast('再設定メールを送信しました（登録がある場合）。メール内のリンクから再設定してください。', { type: 'success', duration: 9000 });
+        } catch (e) {
+            showToast('送信に失敗しました: ' + e.message, { type: 'error' });
+        }
+    };
+    form.appendChild(forgotBtn);
+}
+
+// ---- メールリンク（本人確認 / パスワード再設定）の画面 ----
+function showTokenLinkForm(kind, token) {
+    const authOverlay = document.getElementById('login-overlay');
+    if (!authOverlay) return;
+    document.getElementById('sidebar')?.classList.add('hidden');
+    document.getElementById('main')?.classList.add('hidden');
+
+    const formContainer = document.querySelector('.login-form-container .modal');
+    if (!formContainer) return;
+    const isReset = kind === 'reset';
+    formContainer.innerHTML = `
+        <h3>${isReset ? 'パスワード再設定' : '本登録（パスワード設定）'}</h3>
+        <p style="font-size:14px; color:var(--text-main); margin:16px 0; line-height:1.6;">
+            ${isReset ? '新しいパスワードを設定してください。再設定すると、他のセッションとパスキーはすべて無効化されます（APIキーは無効化されません）。' : 'パスワードを設定すると本登録が完了します。'}
+        </p>
+        <input type="password" id="token-link-password" placeholder="新しいパスワード（12文字以上）" autocomplete="new-password" style="width:100%; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); margin-bottom:8px; box-sizing:border-box;">
+        <input type="password" id="token-link-password-confirm" placeholder="新しいパスワード（確認用）" autocomplete="new-password" style="width:100%; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); margin-bottom:8px; box-sizing:border-box;">
+        <button type="button" id="token-link-submit" class="primary-btn" style="width:100%;">${isReset ? 'パスワードを再設定する' : '本登録を完了する'}</button>
+    `;
+    authOverlay.classList.remove('hidden');
+
+    document.getElementById('token-link-submit').onclick = async () => {
+        const pass = document.getElementById('token-link-password').value;
+        const confirm = document.getElementById('token-link-password-confirm').value;
+        if (pass.length < 12) return showToast('パスワードは12文字以上で設定してください', { type: 'error' });
+        if (pass !== confirm) return showToast('パスワードと確認用パスワードが一致しません', { type: 'error' });
+        try {
+            if (isReset) {
+                await apiFetch('/api/auth/password/reset', { method: 'POST', body: JSON.stringify({ token, new_password: pass }) });
+                localStorage.removeItem('motion_token');
+                localStorage.removeItem('motion_user');
+                showToast('パスワードを再設定しました。新しいパスワードでログインしてください。', { type: 'success', duration: 9000 });
+            } else {
+                await apiFetch('/api/auth/verify', { method: 'POST', body: JSON.stringify({ token, password: pass }) });
+                showToast('本登録が完了しました。ログインしてください。', { type: 'success', duration: 9000 });
+            }
+            history.replaceState(null, '', window.location.pathname);
+            setTimeout(() => location.reload(), 800);
+        } catch (e) {
+            showToast('エラー: ' + e.message, { type: 'error' });
+        }
+    };
+}
+
+// ---- 設定モーダル: パスワード変更 ----
+document.getElementById('btn-change-password')?.addEventListener('click', async () => {
+    const currentEl = document.getElementById('input-current-password');
+    const newEl = document.getElementById('input-new-password');
+    const confirmEl = document.getElementById('input-confirm-new-password');
+    const current = currentEl.value;
+    const next = newEl.value;
+    const confirm = confirmEl.value;
+    if (!current || !next) return showToast('現在のパスワードと新しいパスワードを入力してください', { type: 'error' });
+    if (next.length < 12) return showToast('新しいパスワードは12文字以上で設定してください', { type: 'error' });
+    if (next !== confirm) return showToast('新しいパスワードと確認用が一致しません', { type: 'error' });
+    const btn = document.getElementById('btn-change-password');
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/api/auth/password/change', {
+            method: 'POST',
+            body: JSON.stringify({ current_password: current, new_password: next }),
+        });
+        if (res.token) localStorage.setItem('motion_token', res.token);
+        currentEl.value = ''; newEl.value = ''; confirmEl.value = '';
+        showToast('パスワードを変更しました（他のセッションはログアウトされました）', { type: 'success' });
+    } catch (e) {
+        showToast('パスワード変更に失敗しました: ' + e.message, { type: 'error' });
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+// ---- 設定モーダル: パスキー管理 ----
+async function loadPasskeySection() {
+    const listEl = document.getElementById('passkey-list');
+    if (!listEl) return;
+    try {
+        const [keys, me] = await Promise.all([
+            apiFetch('/api/auth/passkeys'),
+            apiFetch('/api/auth/me'),
+        ]);
+        const toggle = document.getElementById('toggle-password-login-disabled');
+        if (toggle) {
+            toggle.checked = !!me.password_login_disabled;
+            toggle.onchange = async () => {
+                const desired = toggle.checked;
+                try {
+                    await apiFetchWithStepUp('/api/auth/settings/password-login', { method: 'POST', body: JSON.stringify({ disabled: desired }) });
+                    showToast(desired ? 'パスワードログインを無効化しました' : 'パスワードログインを有効化しました', { type: 'success' });
+                } catch (e) {
+                    toggle.checked = !desired;
+                    showToast('設定に失敗しました: ' + e.message, { type: 'error' });
+                }
+            };
+        }
+        if (!Array.isArray(keys) || keys.length === 0) {
+            listEl.innerHTML = '<p style="font-size:13px; color:var(--text-muted);">まだパスキーが登録されていません。</p>';
+            return;
+        }
+        listEl.innerHTML = '';
+        keys.forEach(k => {
+            const row = document.createElement('div');
+            row.style.cssText = 'padding:10px 12px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;';
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-weight:600; font-size:14px;';
+            nameEl.textContent = k.name || '名称未設定';
+            const metaEl = document.createElement('div');
+            metaEl.style.cssText = 'font-size:12px; color:var(--text-muted); margin-top:4px;';
+            metaEl.textContent = '登録: ' + formatApiKeyDate(k.created_at) + ' / 最終利用: ' + formatApiKeyDate(k.last_used_at);
+            const delBtn = document.createElement('button');
+            delBtn.className = 'danger-btn';
+            delBtn.textContent = '削除';
+            delBtn.style.cssText = 'margin-top:8px; padding:4px 10px; font-size:12px;';
+            delBtn.addEventListener('click', async () => {
+                if (!(await showConfirm('このパスキーを削除しますか？', { danger: true }))) return;
+                delBtn.disabled = true;
+                try {
+                    await apiFetchWithStepUp('/api/auth/passkeys/' + k.id, { method: 'DELETE' });
+                    showToast('パスキーを削除しました', { type: 'success' });
+                    await loadPasskeySection();
+                } catch (e) {
+                    showToast('削除に失敗しました: ' + e.message, { type: 'error' });
+                    delBtn.disabled = false;
+                }
+            });
+            row.appendChild(nameEl);
+            row.appendChild(metaEl);
+            row.appendChild(delBtn);
+            listEl.appendChild(row);
+        });
+    } catch (e) {
+        listEl.innerHTML = '';
+        const p = document.createElement('p');
+        p.style.cssText = 'font-size:13px; color:#d93025;';
+        p.textContent = 'パスキーの取得に失敗しました: ' + e.message;
+        listEl.appendChild(p);
+    }
+}
+
+document.getElementById('btn-add-passkey')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-add-passkey');
+    btn.disabled = true;
+    try {
+        const options = await apiFetchWithStepUp('/api/auth/passkeys/register/options', { method: 'POST', body: '{}' });
+        const cred = await navigator.credentials.create({ publicKey: prepareCreationOptions(options) });
+        if (!cred) throw new Error('パスキーが作成されませんでした');
+        const nameResult = await showAuthDialog({
+            title: 'パスキーの名前',
+            message: 'このパスキーの名前を入力してください（例: iPhone、指紋キー）。空欄の場合はメールアドレスが使われます。',
+            fields: [{ id: 'name', type: 'text', placeholder: 'パスキーの名前（任意）' }],
+            submitLabel: '登録する',
+        });
+        const name = nameResult && nameResult.action === 'submit' ? (nameResult.values.name || undefined) : undefined;
+        await apiFetch('/api/auth/passkeys/register/verify', {
+            method: 'POST',
+            body: JSON.stringify({ response: credentialToJSON(cred), name }),
+        });
+        showToast('パスキーを登録しました', { type: 'success' });
+        await loadPasskeySection();
+    } catch (e) {
+        if (e && e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+            showToast('パスキーの登録に失敗しました: ' + (e.message || e), { type: 'error' });
+        }
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+// ---- 設定モーダル: 全セッション失効 ----
+document.getElementById('btn-revoke-sessions')?.addEventListener('click', async () => {
+    if (!(await showConfirm('他のすべてのセッション（端末）をログアウトさせますか？この端末はログインしたままになります。', { danger: true }))) return;
+    try {
+        const res = await apiFetchWithStepUp('/api/auth/revoke-sessions', { method: 'POST', body: '{}' });
+        if (res.token) localStorage.setItem('motion_token', res.token);
+        showToast('他のセッションをすべて失効させました', { type: 'success' });
+    } catch (e) {
+        showToast('失効に失敗しました: ' + e.message, { type: 'error' });
+    }
+});

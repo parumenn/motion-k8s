@@ -223,6 +223,7 @@
                 <div class="settings-tab active" data-tab="appearance">外観・一般</div>
                 <div class="settings-tab" data-tab="account">アカウント</div>
                 <div class="settings-tab" data-tab="apikeys">APIキー</div>
+                <div class="settings-tab" data-tab="secrets">シークレット</div>
                 <div class="settings-tab" data-tab="data">データ管理</div>
                 <div class="settings-tab" data-tab="danger">危険な操作</div>
                 <!-- ★ 管理者専用タブ（初期状態は隠す） -->
@@ -308,6 +309,32 @@
                     <h4 style="margin-top:24px;">発行済みのキー</h4>
                     <div id="apikey-list" style="margin-top:12px;">
                         <p style="font-size:13px; color:var(--text-muted);">読み込み中...</p>
+                    </div>
+                </div>
+
+                <!-- シークレット暗号化／復号 -->
+                <div id="tab-secrets" class="tab-pane hidden">
+                    <h3>シークレット暗号化／復号</h3>
+                    <p class="modal-desc" style="text-align:left;">手元のメモにパスワードなどを平文で書く代わりに、ここで暗号化した文字列（mv1: で始まる暗号文）をメモに書くための道具です。暗号文は Motion には保存されません。暗号化・復号には、あなた専用の鍵（サーバー側で保管）を使います。</p>
+
+                    <h4 style="margin-top:20px;">暗号化</h4>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                        <textarea id="secret-encrypt-input" rows="3" placeholder="暗号化したいテキスト" style="padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); font-family:inherit; resize:vertical;"></textarea>
+                        <button id="btn-secret-encrypt" class="primary-btn">暗号化する</button>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="secret-encrypt-output" readonly placeholder="暗号文がここに表示されます" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); font-family:monospace; font-size:12px;">
+                            <button id="btn-secret-encrypt-copy" class="cancel-btn">コピー</button>
+                        </div>
+                    </div>
+
+                    <h4 style="margin-top:24px;">復号</h4>
+                    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+                        <textarea id="secret-decrypt-input" rows="3" placeholder="mv1: で始まる暗号文を貼り付け" style="padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main); font-family:monospace; font-size:12px; resize:vertical;"></textarea>
+                        <button id="btn-secret-decrypt" class="primary-btn">復号する（再認証が必要）</button>
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="secret-decrypt-output" readonly placeholder="平文は約10秒だけ表示されます" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--border); background:var(--bg-hover); color:var(--text-main);">
+                            <button id="btn-secret-decrypt-copy" class="cancel-btn">コピー</button>
+                        </div>
                     </div>
                 </div>
 

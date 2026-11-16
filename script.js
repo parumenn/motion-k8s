@@ -2972,6 +2972,69 @@ document.getElementById('btn-copy-apikey')?.addEventListener('click', async () =
     }
 });
 
+// ================= シークレット暗号化／復号（設定モーダル） =================
+// 暗号文はサーバーに保存されない（変換のみ）。平文は localStorage 等に残さず、
+// 復号結果は約10秒で自動的に消去する。設定モーダルを閉じたときも消去する。
+let secretPlaintextTimer = null;
+
+function clearDecryptedSecret() {
+    const out = document.getElementById('secret-decrypt-output');
+    if (out) out.value = '';
+    if (secretPlaintextTimer) { clearTimeout(secretPlaintextTimer); secretPlaintextTimer = null; }
+}
+
+document.getElementById('settings-close')?.addEventListener('click', clearDecryptedSecret);
+
+document.getElementById('btn-secret-encrypt')?.addEventListener('click', async () => {
+    const input = document.getElementById('secret-encrypt-input');
+    const output = document.getElementById('secret-encrypt-output');
+    const btn = document.getElementById('btn-secret-encrypt');
+    if (!input.value) { showToast('暗号化するテキストを入力してください', { type: 'error' }); return; }
+    btn.disabled = true;
+    try {
+        const res = await apiFetch('/api/secrets/encrypt', { method: 'POST', body: JSON.stringify({ plaintext: input.value }) });
+        output.value = res.ciphertext || '';
+        input.value = '';
+    } catch (err) {
+        showToast('暗号化に失敗しました: ' + err.message, { type: 'error' });
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('btn-secret-decrypt')?.addEventListener('click', async () => {
+    const input = document.getElementById('secret-decrypt-input');
+    const btn = document.getElementById('btn-secret-decrypt');
+    if (!input.value.trim()) { showToast('暗号文を貼り付けてください', { type: 'error' }); return; }
+    btn.disabled = true;
+    try {
+        const res = await apiFetchWithStepUp('/api/secrets/decrypt', { method: 'POST', body: JSON.stringify({ ciphertext: input.value.trim() }) });
+        clearDecryptedSecret();
+        document.getElementById('secret-decrypt-output').value = res.plaintext || '';
+        secretPlaintextTimer = setTimeout(clearDecryptedSecret, 10000);
+        showToast('復号しました（平文は約10秒で自動的に消えます）', { type: 'success' });
+    } catch (err) {
+        showToast('復号に失敗しました: ' + err.message, { type: 'error' });
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+async function copySecretField(inputId, doneMessage) {
+    const val = document.getElementById(inputId);
+    if (!val || !val.value) return;
+    try {
+        await navigator.clipboard.writeText(val.value);
+        showToast(doneMessage, { type: 'success' });
+    } catch (e) {
+        val.select();
+        document.execCommand('copy');
+    }
+}
+
+document.getElementById('btn-secret-encrypt-copy')?.addEventListener('click', () => copySecretField('secret-encrypt-output', '暗号文をコピーしました'));
+document.getElementById('btn-secret-decrypt-copy')?.addEventListener('click', () => copySecretField('secret-decrypt-output', '平文をコピーしました'));
+
 // ================= 管理者用 =================
 // 登録はメール確認制に移行したため、管理者による承認は不要になった。
 document.querySelector('.settings-tab[data-tab="admin"]')?.addEventListener('click', async () => {

@@ -5,7 +5,7 @@ FROM nginx:alpine
 COPY default.conf /etc/nginx/conf.d/default.conf
 
 # カレントディレクトリにあるHTML/JS/CSSファイルを、Nginxの公開用ディレクトリにコピー
-COPY ./ /usr/share/nginx/html/
+COPY index.html script.js styles.css /usr/share/nginx/html/
 
 # コンテナがリッスンするポートを明示
 EXPOSE 80

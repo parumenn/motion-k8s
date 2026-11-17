@@ -3757,6 +3757,7 @@ function prepareRequestOptions(options) {
 function showAuthDialog({ title, message, fields = [], submitLabel = 'OK', extraLabel = null }) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
+        overlay.id = 'auth-dialog-overlay';
         overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; z-index:400000;';
         const modal = document.createElement('div');
         modal.className = 'modal';

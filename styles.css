@@ -2087,3 +2087,34 @@ body.dark-mode .selected-block > .block-main {
     border-color: #dc3545;
     color: #fff;
 }
+
+/* ================= 2026-11-17: モバイルツールバーとオーバーレイ/トーストの競合修正 =================
+   #mobile-toolbar は z-index 最大で常時表示されるため、ログイン画面の
+   「パスワードを忘れた」や設定モーダル上のトーストが背面に隠れていた。
+   対策: (1) フルスクリーンのオーバーレイ/ダイアログ表示中はツールバーを隠す
+         (2) トーストはツールバーより前面に出し、モバイルではツールバーの
+             高さ分だけ表示位置を上げる（エディタ表示中でも隠れない） */
+#toast-container {
+    z-index: 2147483647;
+}
+
+@media (max-width: 768px) {
+    #toast-container {
+        bottom: calc(50px + 1rem + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+@media (max-width: 1024px) {
+    body:has(#login-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#settings-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#search-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#trash-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#link-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#ext-link-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#confirm-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#mobile-bottom-sheet-overlay:not(.hidden)) #mobile-toolbar,
+    body:has(#auth-dialog-overlay) #mobile-toolbar {
+        display: none !important;
+    }
+}
